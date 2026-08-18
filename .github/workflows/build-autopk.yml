@@ -1,0 +1,60 @@
+name: Build AUTO-PK x64
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Reassemble verified source payload
+        shell: pwsh
+        run: |
+          $parts = Get-ChildItem source/chunks/part* | Sort-Object Name
+          if ($parts.Count -ne 9) { throw "Expected 9 source chunks, got $($parts.Count)" }
+          $b64 = ($parts | ForEach-Object { [IO.File]::ReadAllText($_.FullName).Trim() }) -join ''
+          [IO.File]::WriteAllBytes('AutoPK_Source_v0.1.0.zip', [Convert]::FromBase64String($b64))
+          $hash = (Get-FileHash AutoPK_Source_v0.1.0.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '5a6855bf4b2fb1e2b6e011379c25b9f8999e8eed01eb139e05169d6ec590527f') {
+            throw "Source payload SHA256 mismatch: $hash"
+          }
+          New-Item -ItemType Directory -Force generated/autopk | Out-Null
+          Expand-Archive AutoPK_Source_v0.1.0.zip -DestinationPath generated/autopk -Force
+          Copy-Item vendor generated/autopk/vendor -Recurse -Force
+          Write-Host "Verified source payload: $hash"
+
+      - name: Configure Visual Studio x64
+        shell: pwsh
+        run: cmake -S generated/autopk -B build -G "Visual Studio 17 2022" -A x64
+
+      - name: Build Release
+        shell: pwsh
+        run: cmake --build build --config Release --parallel
+
+      - name: Package runtime
+        shell: pwsh
+        run: |
+          $out = 'dist/ThanLongAutoPK-v0.1.0-win-x64'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          Copy-Item build/Release/ThanLongAutoPK.exe $out/
+          Copy-Item build/Release/ThanLongCleanRouteBridge.dll $out/
+          Copy-Item generated/autopk/README.md $out/
+          Copy-Item generated/autopk/PROJECT_KNOWLEDGE.md $out/
+          Compress-Archive -Path "$out/*" -DestinationPath dist/ThanLongAutoPK-v0.1.0-win-x64.zip -Force
+          Get-FileHash dist/ThanLongAutoPK-v0.1.0-win-x64.zip -Algorithm SHA256
+
+      - name: Upload Windows x64 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ThanLongAutoPK-v0.1.0-win-x64
+          path: dist/ThanLongAutoPK-v0.1.0-win-x64.zip
+          if-no-files-found: error
+          retention-days: 90
