@@ -23,7 +23,8 @@ jobs:
         id: source
         shell: pwsh
         run: |
-          Copy-Item source/v015/AutoPK_Source_v0.1.5.zip AutoPK_Source_v0.1.5.zip -Force
+          $b64 = [IO.File]::ReadAllText('source/v015/AutoPK_Source_v0.1.5.b64').Trim()
+          [IO.File]::WriteAllBytes('AutoPK_Source_v0.1.5.zip', [Convert]::FromBase64String($b64))
           $hash = (Get-FileHash AutoPK_Source_v0.1.5.zip -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($hash -ne 'f1259f317f3eb4e884b376e182c547d4ef83fb7a79b14b124d6602ca97ecb814') {
             throw "Source payload SHA256 mismatch: $hash"
