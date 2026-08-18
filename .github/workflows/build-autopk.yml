@@ -65,6 +65,14 @@ jobs:
           git apply --directory=generated/autopk docs.patch
           git apply --directory=generated/autopk knowledge.patch
 
+          function Normalize-LfFile([string]$path) {
+            $text = [IO.File]::ReadAllText($path).Replace("`r`n", "`n").Replace("`r", "`n")
+            [IO.File]::WriteAllText($path, $text, $utf8NoBom)
+          }
+          Normalize-LfFile 'generated/autopk/src/controller.cpp'
+          Normalize-LfFile 'generated/autopk/README.md'
+          Normalize-LfFile 'generated/autopk/PROJECT_KNOWLEDGE.md'
+
           $controllerHash = (Get-FileHash generated/autopk/src/controller.cpp -Algorithm SHA256).Hash.ToLowerInvariant()
           $readmeHash = (Get-FileHash generated/autopk/README.md -Algorithm SHA256).Hash.ToLowerInvariant()
           $knowledgeHash = (Get-FileHash generated/autopk/PROJECT_KNOWLEDGE.md -Algorithm SHA256).Hash.ToLowerInvariant()
