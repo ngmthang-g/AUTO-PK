@@ -1,0 +1,120 @@
++    }
++
+     bool RouteCooldown(RuntimeState& rt, RouteAction action, DWORD now) {
+         DWORD delay = kRouteCommandCooldownMs;
+         if (action == RouteAction::StartPath) delay = kStartPathCooldownMs;
+@@ -906,25 +1043,7 @@
+         return false;
+     }
+ 
+-    if (action == RouteAction::StartPath && (a.snapshot.validMask & ValidMap) &&
+-        target.mapID > 0 && a.snapshot.mapID != target.mapID) {
+-        RuntimeState& rt = a.runtime;
+-        const bool newTarget = !rt.crossMapRouteOwned || rt.crossMapTargetMap != target.mapID;
+-        if (newTarget) {
+-            ResetCrossMapProof(rt);
+-            rt.crossMapRouteOwned = true;
+-            rt.crossMapFromMap = a.snapshot.mapID;
+-            rt.crossMapTargetMap = target.mapID;
+-            rt.crossMapTravelObserved =
+-                ((a.snapshot.validMask & ValidAutoPath) && a.snapshot.autoPathing) ||
+-                ((a.snapshot.validMask & ValidMoving) && a.snapshot.moving) ||
+-                ((a.snapshot.validMask & ValidMapTransition) && a.snapshot.waitingChangeMap);
+-            LogAccount(a, L"SMART CONFIRM OWN: route cross-map M" +
+-                std::to_wstring(rt.crossMapFromMap) + L" → M" +
+-                std::to_wstring(rt.crossMapTargetMap) +
+-                L" • chỉ click khi MessageBox authoritative + visible.");
+-        }
+-    }
++    // v0.1.5: StartPath chỉ lo đường đi. XÁC NHẬN MAP chạy độc lập theo timer từng acc.
+     return true;
+ }
+ 
+@@ -1291,11 +1410,15 @@
+ 
+ 
+ void TickAccount(Account& a, DWORD now) {
+-    if (!a.runtime.running || !a.snapshotValid) return;
++    if (!a.runtime.running) return;
+     if (globalPaused_) { a.runtime.status = L"F4 PAUSE • chỉ đọc snapshot"; return; }
+ 
++    // XÁC NHẬN MAP v0.1.5: timer theo từng acc, chỉ dựa vào thời gian + tọa độ người dùng gán.
++    // Không cần ValidConfirmUi/MessageBox/MapID hay bất kỳ snapshot proof nào để quyết định click.
++    if (DrivePeriodicConfirm(a, now)) return;
++    if (!a.snapshotValid) { a.runtime.status = L"XN MAP timer vẫn độc lập • logic còn lại chờ snapshot"; return; }
++
+     if (HandleDeath(a, now)) return;
+-    if (MaybeConfirm(a, now)) return;
+     if (mouseLeasePid_ && mouseLeasePid_ != a.game.pid) {
+         a.runtime.status = L"FREEZE BĐPT • PID " + std::to_wstring(mouseLeasePid_) + L" đang chiếm chuột";
+         return;
+@@ -1464,7 +1587,7 @@
+         return true;
+     };
+ 
+-    if (!requireIfEnabled(kReviveSlot) || !requireIfEnabled(kSemanticConfirmSlot)) return false;
++    if (!requireIfEnabled(kReviveSlot)) return false;
+ 
+     for (std::size_t slot = kRecoveryFirstSlot; slot <= kRecoveryLastSlot; ++slot) {
+         if (slot == kBuffSlot && !settings_.buffEnabled) continue;
+@@ -1488,11 +1611,18 @@
+         for (int row = 0; row < ListView_GetItemCount(clientList_) && row < static_cast<int>(accounts_.size()); ++row) {
+             if (!ListView_GetCheckState(clientList_, row)) continue;
+             Account& a = *accounts_[static_cast<std::size_t>(row)];
++            if (settings_.clicks[kSemanticConfirmSlot].enabled &&
++                (!a.periodicConfirm.point.valid || a.periodicConfirm.intervalSec <= 0)) {
++                LogAccount(a, L"Không start: XÁC NHẬN MAP đang bật nhưng ACC này chưa có tọa độ + số giây riêng.");
++                continue;
++            }
+             std::wstring error;
+             if (!EnsureAttach(a, error)) { LogAccount(a, L"Không start: " + error); continue; }
+ 
+             a.runtime = RuntimeState{};
+             a.runtime.running = true;
++            if (settings_.clicks[kSemanticConfirmSlot].enabled && a.periodicConfirm.intervalSec > 0)
++                a.runtime.nextPeriodicConfirmTick = now + static_cast<DWORD>(a.periodicConfirm.intervalSec * 1000u);
+             ++count;
+ 
+             if (a.snapshotValid && (a.snapshot.validMask & ValidLifeState)) {
+@@ -1531,6 +1661,7 @@
+         for (const auto& g : games) {
+             auto a = std::make_unique<Account>(); a->game = g; a->displayName = g.title;
+             std::wstring error; if (a->bridge.Attach(g, error)) { Response r{}; if (a->bridge.Call(Command::ReadState, 0, 0, 0, r, error, 700)) { a->snapshot = r.snapshot; a->snapshotValid = true; } }
++            LoadAccountConfirm(*a);
+             next.push_back(std::move(a));
+         }
+         accounts_ = std::move(next); ListView_DeleteAllItems(clientList_);
+@@ -1540,6 +1671,7 @@
+             item.pszText = name.data(); ListView_InsertItem(clientList_, &item); UpdateRow(i, *accounts_[static_cast<std::size_t>(i)]);
+         }
+         Log(L"QUÉT CLIENT: " + std::to_wstring(accounts_.size()) + L" cửa sổ có GameAssembly.dll.");
++        LoadSelectedConfirmUi();
+     }
+ 
+     void UpdateRow(int row, Account& a) {
+@@ -1617,17 +1749,30 @@
+         RECT rc{}; if (!GetClientRect(a->game.window, &rc)) { Log(L"F8: GetClientRect fail"); return; }
+         const int w = rc.right - rc.left, h = rc.bottom - rc.top;
+         if (client.x < 0 || client.y < 0 || client.x >= w || client.y >= h) { Log(L"F8: chuột đang ngoài client game."); return; }
+-        ScreenPoint& step = settings_.clicks[static_cast<std::size_t>(captureSlot_)];
+-        step.x = client.x; step.y = client.y; step.baseW = w; step.baseH = h; step.valid = true;
+-        SaveSettings(settings_);
+-        LogAccount(*a, L"Đã lưu " + std::wstring(kSlotLabels[static_cast<std::size_t>(captureSlot_)]) + L" = " + PointText(step) +
+-            L" • delay " + std::to_wstring(step.delayMs) + L" ms • lặp " + std::to_wstring(step.repeat));
++        if (static_cast<std::size_t>(captureSlot_) == kSemanticConfirmSlot) {
++            ScreenPoint& step = a->periodicConfirm.point;
++            step.x = client.x; step.y = client.y; step.baseW = w; step.baseH = h; step.valid = true;
++            SaveAccountConfirm(*a);
++            LogAccount(*a, L"Đã lưu XÁC NHẬN RA MAP riêng ACC = " + PointText(step) +
++                L" • timer " + std::to_wstring(a->periodicConfirm.intervalSec) + L" giây");
++            LoadSelectedConfirmUi();
++        } else {
++            ScreenPoint& step = settings_.clicks[static_cast<std::size_t>(captureSlot_)];
++            step.x = client.x; step.y = client.y; step.baseW = w; step.baseH = h; step.valid = true;
++            SaveSettings(settings_);
++            LogAccount(*a, L"Đã lưu " + std::wstring(kSlotLabels[static_cast<std::size_t>(captureSlot_)]) + L" = " + PointText(step) +
++                L" • delay " + std::to_wstring(step.delayMs) + L" ms • lặp " + std::to_wstring(step.repeat));
++        }
+         captureSlot_ = -1; capturePid_ = 0; RefreshClickList(); SetText(status_, L"BĐPT: lưu click xong");
+     }
+ 
