@@ -19,22 +19,61 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Reassemble verified source payload
+      - name: Reassemble verified v0.1.4 base
         id: source
         shell: pwsh
         run: |
           $parts = Get-ChildItem source/v014/part* | Sort-Object Name
-          if ($parts.Count -ne 12) { throw "Expected 12 source chunks, got $($parts.Count)" }
+          if ($parts.Count -ne 12) { throw "Expected 12 v0.1.4 source chunks, got $($parts.Count)" }
           $b64 = ($parts | ForEach-Object { [IO.File]::ReadAllText($_.FullName).Trim() }) -join ''
           [IO.File]::WriteAllBytes('AutoPK_Source_v0.1.4.zip', [Convert]::FromBase64String($b64))
           $hash = (Get-FileHash AutoPK_Source_v0.1.4.zip -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($hash -ne 'bf42380533a7fd04175de661ce6b9e35f28d4db53d5e9620cbc3d174225fbadd') {
-            throw "Source payload SHA256 mismatch: $hash"
+            throw "v0.1.4 source payload SHA256 mismatch: $hash"
           }
           New-Item -ItemType Directory -Force generated/autopk | Out-Null
           Expand-Archive AutoPK_Source_v0.1.4.zip -DestinationPath generated/autopk -Force
+          Write-Host "Verified exact v0.1.4 base: $hash"
+
+      - name: Reassemble and apply v0.1.5 plaintext patches
+        id: patch
+        shell: pwsh
+        run: |
+          $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+          function Join-PatchParts([string]$pattern, [string]$output) {
+            $parts = Get-ChildItem $pattern | Sort-Object Name
+            if ($parts.Count -lt 1) { throw "No patch parts found: $pattern" }
+            $text = ($parts | ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join ''
+            [IO.File]::WriteAllText($output, $text, $utf8NoBom)
+          }
+
+          Join-PatchParts 'source/v015/controller.part*' 'controller.patch'
+          Join-PatchParts 'source/v015/docs.part*' 'docs.patch'
+          Join-PatchParts 'source/v015/knowledge.part*' 'knowledge.patch'
+
+          $controllerPatchHash = (Get-FileHash controller.patch -Algorithm SHA256).Hash.ToLowerInvariant()
+          $docsPatchHash = (Get-FileHash docs.patch -Algorithm SHA256).Hash.ToLowerInvariant()
+          $knowledgePatchHash = (Get-FileHash knowledge.patch -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($controllerPatchHash -ne 'f90e1b996d679c21859aed37386e6c2b64c07efe66a4d2f7a385881708b38060') { throw "controller.patch SHA mismatch: $controllerPatchHash" }
+          if ($docsPatchHash -ne '5f57a3e4085617febc86ea2c15a83a28fd957a044696643982a46b858a4c87cd') { throw "docs.patch SHA mismatch: $docsPatchHash" }
+          if ($knowledgePatchHash -ne '5d6651bdb867f098debd780d095af92e85b538a250f94eca2b804d5d0ec93ebc') { throw "knowledge.patch SHA mismatch: $knowledgePatchHash" }
+
+          git apply --directory=generated/autopk controller.patch
+          git apply --directory=generated/autopk docs.patch
+          git apply --directory=generated/autopk knowledge.patch
+
+          $controllerHash = (Get-FileHash generated/autopk/src/controller.cpp -Algorithm SHA256).Hash.ToLowerInvariant()
+          $readmeHash = (Get-FileHash generated/autopk/README.md -Algorithm SHA256).Hash.ToLowerInvariant()
+          $knowledgeHash = (Get-FileHash generated/autopk/PROJECT_KNOWLEDGE.md -Algorithm SHA256).Hash.ToLowerInvariant()
+          $cmakeHash = (Get-FileHash generated/autopk/CMakeLists.txt -Algorithm SHA256).Hash.ToLowerInvariant()
+
+          if ($controllerHash -ne '7ab8407c714e31f459cc5ddc77ae3ba249e9cb277c0301565a0d21a5e549c1cd') { throw "v0.1.5 controller SHA mismatch: $controllerHash" }
+          if ($readmeHash -ne '38c0cfe9040a193989812f2ebf1ce42f8675d58ffb130e10f213f6e3cb58d301') { throw "v0.1.5 README SHA mismatch: $readmeHash" }
+          if ($knowledgeHash -ne 'a3f104988aeb5f2f40ff711655f365c61b5e86e7eb31c93d172d8da6a653a6de') { throw "v0.1.5 knowledge SHA mismatch: $knowledgeHash" }
+          if ($cmakeHash -ne '9b70a0df7b5aff5d2da374c36d6086cababffc317fe19d2e920f2b791a05bd37') { throw "CMakeLists changed unexpectedly: $cmakeHash" }
+
           Copy-Item vendor generated/autopk/vendor -Recurse -Force
-          Write-Host "Verified source payload: $hash"
+          Write-Host "Verified v0.1.5 patched source: controller=$controllerHash"
 
       - name: Configure Visual Studio x64
         id: configure
@@ -54,15 +93,15 @@ jobs:
         if: steps.compile.outcome == 'success'
         shell: pwsh
         run: |
-          $out = 'dist/ThanLongAutoPK-v0.1.4-win-x64'
+          $out = 'dist/ThanLongAutoPK-v0.1.5-win-x64'
           New-Item -ItemType Directory -Force $out | Out-Null
           Copy-Item build/Release/ThanLongAutoPK.exe $out/
           Copy-Item build/Release/ThanLongCleanRouteBridge.dll $out/
           Copy-Item generated/autopk/README.md $out/
           Copy-Item generated/autopk/PROJECT_KNOWLEDGE.md $out/
-          Compress-Archive -Path "$out/*" -DestinationPath dist/ThanLongAutoPK-v0.1.4-win-x64.zip -Force
-          $runtimeHash = (Get-FileHash dist/ThanLongAutoPK-v0.1.4-win-x64.zip -Algorithm SHA256).Hash.ToLowerInvariant()
-          Set-Content dist/RUNTIME_SHA256_v0.1.4.txt "$runtimeHash  ThanLongAutoPK-v0.1.4-win-x64.zip" -Encoding ascii
+          Compress-Archive -Path "$out/*" -DestinationPath dist/ThanLongAutoPK-v0.1.5-win-x64.zip -Force
+          $runtimeHash = (Get-FileHash dist/ThanLongAutoPK-v0.1.5-win-x64.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content dist/RUNTIME_SHA256_v0.1.5.txt "$runtimeHash  ThanLongAutoPK-v0.1.5-win-x64.zip" -Encoding ascii
           Write-Host "Runtime SHA256: $runtimeHash"
 
       - name: Write build status
@@ -70,28 +109,33 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
+          $source = '${{ steps.source.outcome }}'
+          $patch = '${{ steps.patch.outcome }}'
           $configure = '${{ steps.configure.outcome }}'
           $compile = '${{ steps.compile.outcome }}'
           $package = '${{ steps.package.outcome }}'
-          $status = if ($configure -eq 'success' -and $compile -eq 'success' -and $package -eq 'success') { 'PASS' } else { 'FAIL' }
+          $status = if ($source -eq 'success' -and $patch -eq 'success' -and $configure -eq 'success' -and $compile -eq 'success' -and $package -eq 'success') { 'PASS' } else { 'FAIL' }
           @"
-          # AUTO-PK v0.1.4 Build Status
+          # AUTO-PK v0.1.5 Build Status
 
           - Status: **$status**
-          - Source payload SHA256: bf42380533a7fd04175de661ce6b9e35f28d4db53d5e9620cbc3d174225fbadd
+          - Exact base v0.1.4 source SHA256: bf42380533a7fd04175de661ce6b9e35f28d4db53d5e9620cbc3d174225fbadd
+          - Patched controller SHA256: 7ab8407c714e31f459cc5ddc77ae3ba249e9cb277c0301565a0d21a5e549c1cd
+          - Base verify: **$source**
+          - Patch + final SHA verify: **$patch**
           - Configure: **$configure**
           - Compile: **$compile**
           - Package: **$package**
           - Workflow run: $env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID
           - Commit: $env:GITHUB_SHA
-          "@ | Set-Content dist/BUILD_STATUS_v0.1.4.md -Encoding utf8
+          "@ | Set-Content dist/BUILD_STATUS_v0.1.5.md -Encoding utf8
 
       - name: Upload Windows x64 artifact
         if: steps.package.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: ThanLongAutoPK-v0.1.4-win-x64
-          path: dist/ThanLongAutoPK-v0.1.4-win-x64.zip
+          name: ThanLongAutoPK-v0.1.5-win-x64
+          path: dist/ThanLongAutoPK-v0.1.5-win-x64.zip
           if-no-files-found: error
           retention-days: 90
 
@@ -101,19 +145,19 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add dist/BUILD_STATUS_v0.1.4.md
-          if (Test-Path dist/ThanLongAutoPK-v0.1.4-win-x64.zip) {
-            git add dist/ThanLongAutoPK-v0.1.4-win-x64.zip dist/RUNTIME_SHA256_v0.1.4.txt
+          git add dist/BUILD_STATUS_v0.1.5.md
+          if (Test-Path dist/ThanLongAutoPK-v0.1.5-win-x64.zip) {
+            git add dist/ThanLongAutoPK-v0.1.5-win-x64.zip dist/RUNTIME_SHA256_v0.1.5.txt
           }
           git diff --cached --quiet
           if ($LASTEXITCODE -ne 0) {
-            git commit -m "Publish AUTO-PK v0.1.4 Windows x64 build"
+            git commit -m "Publish AUTO-PK v0.1.5 Windows x64 build"
             git push origin HEAD:main
           } else {
             Write-Host "No dist changes to publish"
           }
 
       - name: Fail workflow when build failed
-        if: always() && (steps.configure.outcome != 'success' || steps.compile.outcome != 'success' || steps.package.outcome != 'success')
+        if: always() && (steps.source.outcome != 'success' || steps.patch.outcome != 'success' || steps.configure.outcome != 'success' || steps.compile.outcome != 'success' || steps.package.outcome != 'success')
         shell: pwsh
-        run: throw 'AUTO-PK Windows x64 build failed; see configure/build logs and dist/BUILD_STATUS_v0.1.4.md.'
+        run: throw 'AUTO-PK v0.1.5 Windows x64 build failed; inspect source/patch/hash/configure/build/package steps.'
