@@ -1,0 +1,108 @@
+--- a/PROJECT_KNOWLEDGE.md
++++ b/PROJECT_KNOWLEDGE.md
+@@ -1,74 +1,38 @@
+ # AUTO-PK Project Knowledge
+ 
+-## Version v0.1.4
++## Version v0.1.5
+ 
+-Base: ThanLongItemConsolidator v0.2.7-R3 coordinator architecture. Runtime bridge remains CleanRoute protocol v1.5.2.
++Base is exactly AUTO-PK v0.1.4. Preserve its recovery, staging PK/Alliance, barrier, route, final Auto/PK/Auto/Train, F4, and click-only mouse lease behavior.
+ 
+-### Verified research facts used
++### User-requested v0.1.5 change: per-account periodic map Confirm
++The previous semantic Smart Confirm is inactive in runtime flow.
++
++For each game account/window store independently:
++- Confirm click x/y and capture client width/height;
++- `IntervalSec` (0..86400; START requires >0 when Confirm row master checkbox is enabled).
++
++Persistence key prefers authoritative RoleID; if unavailable it falls back to a stable hash of character/window identity.
++
++Runtime rule:
++`START tick -> nextPeriodicConfirmTick = start + IntervalSec`.
++When due, Confirm uses only time + saved per-account coordinate. It does not require `ValidConfirmUi`, `confirmUiVisible`, MessageBox, MapID, MapReady, moving, AutoPath, or any other snapshot proof.
++
++After a successful physical click:
++- release global mouse lease immediately after LEFTUP;
++- set next due time to `now + IntervalSec`;
++- configured waiting time never owns the mouse.
++
++If a physical click fails, retry guard is 1 second; this is an input retry only, not UI recognition.
++
++### Preserved state flow
++`DEAD? -> revive if needed -> healer -> RecoveryClicks -> RouteStaging -> StageClicks(PK,Alliance) -> WaitStaging barrier -> RouteMain -> FinalClicks(Auto,PK,Auto,Train) -> VerifyFinalAuto -> Monitor`
++
++### Preserved verified facts
+ - Lâu Lan = MapID 5.
+ - Đỗ Thanh Đằng = NPC ID 339 (`LangZhong1`).
+-- `ValidLifeState/dead` is authoritative life-state input.
+-- `ValidAutoFight/autoFight` is the current AutoFight observer.
+-- CleanRoute v1.5.2 exposes `ValidConfirmUi + confirmUiVisible`.
+-- Confirm donor v0.9.0 proves the key invariant: authoritative UI scanner and MessageBox existence are separate; never infer Confirm from elapsed time.
+-- Current preferred semantic observer is `LuaSystemAPI_GUI.FindUI("MessageBox")` / equivalent MainFindUI.
+-- Cross-map completion proof is actual MapID + MapReady + position, not sleep duration.
++- `ValidLifeState/dead` remains authoritative for revive logic.
++- `ValidAutoFight/autoFight` remains final AutoFight observer.
++- Stage and main keep independent MapID values.
+ 
+-### v0.1.4 state flow
+-`DEAD? -> revive if needed -> healer -> RecoveryClicks -> RouteStaging -> StageClicks(PK,Alliance) -> WaitStaging barrier -> RouteMain + SmartConfirm -> FinalClicks(Auto,PK,Auto,Train) -> VerifyFinalAuto -> Monitor`
+-
+-Recovery click rows:
+-1. Treat
+-2. TreatConfirm1
+-3. TreatConfirm2
+-4. AutoBeforeBuff
+-5. Buff (conditional on global Buff toggle)
+-6. ClosePanel
+-7. AutoAfterPanel
+-8. StopAuto
+-
+-Stage rows run immediately after arrival at staging:
+-- StagePk
+-- StageAlliance
+-
+-Final rows run only after arrival at main:
+-- FinalAuto1
+-- FinalPk
+-- FinalAuto2
+-- FinalTrain
+-
+-### Smart Confirm ownership
+-Confirm is allowed only inside a tool-owned cross-map route generation.
+-
+-Required proof before click:
+-1. StartPath to a different target MapID succeeded.
+-2. AutoPath / Moving / waitingChangeMap evidence was observed.
+-3. active travel is no longer observed before target map is reached.
+-4. `ValidConfirmUi` is set.
+-5. `confirmUiVisible == 1`.
+-
+-After click:
+-- wait MessageBox close;
+-- wait real map transition / target MapID + MapReady.
+-- retry timeouts only re-arm routing; timeout is never UI-existence proof.
+-
+-### Multi-client barrier
+-Every running account must be alive, within staging tolerance, phase `WaitStaging`, and `stagingReady=true`.
+-`stagingReady` is set only after enabled PK + Alliance rows finish.
+-Only then may all accounts enter `RouteMain`.
+-
+-### Map profiles
+-Stage and main have independent MapID values. This is required for staging-before-portal and main-after-portal workflows.
+-
+-### Safety
+-- one global real-mouse lease;
+-- fail-closed semantic state;
+-- no stale Unity/Lua pointers kept across scans/map generations;
+-- F4 stops mutable action but does not stop state polling;
+-- no old CreateRemoteThread gameplay worker;
+-- no blind Confirm timer.
+-
+-
+-## v0.1.4 mouse lease invariant
+-
+-Mouse ownership is per physical click only: acquire immediately before foreground/cursor/down/up, release immediately after mouse-up. Configured row delay and repeat waiting never hold the global mouse lease, so other running accounts may click during those waits.
++### Mouse lease invariant
++Mouse ownership is per physical click only: acquire immediately before foreground/cursor/down/up and release immediately after mouse-up. Row delay, repeat wait, and periodic Confirm interval never hold the lease.
