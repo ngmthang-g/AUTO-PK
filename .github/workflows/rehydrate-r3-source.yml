@@ -8,12 +8,18 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   rehydrate:
     runs-on: windows-latest
     steps:
+      - name: Checkout AUTO-PK target repository
+        uses: actions/checkout@v4
+        with:
+          path: target
+          fetch-depth: 1
+
       - name: Checkout exact R3 source repository
         uses: actions/checkout@v4
         with:
@@ -34,6 +40,25 @@ jobs:
           $hash = (Get-FileHash -Algorithm SHA256 .\generated\donor159\src\controller.cpp).Hash.ToLowerInvariant()
           if ($hash -ne 'a69fa0df4932e4020aed6e61b4109bd2c558db5c407afedb46c03456fb575abf') { throw "Unexpected R3 controller hash: $hash" }
           Write-Host "R3 exact source verified: $hash"
+
+      - name: Persist exact R3 source into AUTO-PK
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force .\target\vendor\r3 | Out-Null
+          Copy-Item .\donor\generated\donor159\src .\target\vendor\r3\src -Recurse -Force
+          Copy-Item .\donor\generated\donor159\resources .\target\vendor\r3\resources -Recurse -Force
+          Copy-Item .\donor\generated\donor159\src\controller.cpp .\target\vendor\r3\controller.cpp -Force
+          Push-Location .\target
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add vendor/r3
+          if (git diff --cached --quiet) {
+            Write-Host 'Exact R3 source already persisted.'
+          } else {
+            git commit -m "vendor exact v0.2.7-R3 source"
+            git push origin main
+          }
+          Pop-Location
 
       - name: Upload rehydrated source
         uses: actions/upload-artifact@v4
