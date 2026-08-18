@@ -40,7 +40,7 @@ jobs:
         id: configure
         continue-on-error: true
         shell: pwsh
-        run: cmake -S generated/autopk -B build -G "Visual Studio 17 2022" -A x64
+        run: cmake -S generated/autopk -B build -G "Visual Studio 18 2026" -A x64
 
       - name: Build Release
         id: compile
@@ -78,12 +78,12 @@ jobs:
           # AUTO-PK v0.1.0 Build Status
 
           - Status: **$status**
-          - Source payload SHA256: `5a6855bf4b2fb1e2b6e011379c25b9f8999e8eed01eb139e05169d6ec590527f`
-          - Configure: `$configure`
-          - Compile: `$compile`
-          - Package: `$package`
+          - Source payload SHA256: 5a6855bf4b2fb1e2b6e011379c25b9f8999e8eed01eb139e05169d6ec590527f
+          - Configure: **$configure**
+          - Compile: **$compile**
+          - Package: **$package**
           - Workflow run: $env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID
-          - Commit: `$env:GITHUB_SHA`
+          - Commit: $env:GITHUB_SHA
           "@ | Set-Content dist/BUILD_STATUS.md -Encoding utf8
 
       - name: Upload Windows x64 artifact
