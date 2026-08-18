@@ -1,0 +1,22 @@
+-Mỗi profile lưu riêng:
+-- `StageMap + StageX + StageY` cho TỌA PHỤ;
+-- `MainMap + MainX + MainY` cho TỌA CHÍNH.
+-
+-PHỤ và CHÍNH **có thể khác MapID**. Chọn profile trong combobox sẽ nạp lại cả hai map và tọa độ.
+-
+-## Safety giữ nguyên
+-- F4 pause/resume toàn bộ mutable action; snapshot vẫn poll.
+-- Fail-closed khi state/observer không authoritative.
+-- Một mouse-owner tại một thời điểm.
+-- Không dùng blind periodic Confirm.
+-- Không mang trade/sell/consolidation vào AUTO-PK.
+-
+-
+-## v0.1.4 mouse lease invariant
+-
+-Mouse ownership is per physical click only: acquire immediately before foreground/cursor/down/up, release immediately after mouse-up. Configured row delay and repeat waiting never hold the global mouse lease, so other running accounts may click during those waits.
++## F4 / safety giữ nguyên
++- F4 pause/resume mutable action.
++- Một mouse owner tại một thời điểm.
++- Logic route/life/AutoFight khác vẫn dùng snapshot như v0.1.4.
++- Riêng **XÁC NHẬN RA MAP** là periodic click theo timer người dùng yêu cầu, không dùng semantic Confirm observer.
