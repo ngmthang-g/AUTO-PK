@@ -44,6 +44,9 @@ jobs:
             $parts = Get-ChildItem $pattern | Sort-Object Name
             if ($parts.Count -lt 1) { throw "No patch parts found: $pattern" }
             $text = ($parts | ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join ''
+            # Git checkout on Windows may materialize repository text files as CRLF.
+            # Normalize patch bytes back to canonical LF before hashing/applying.
+            $text = $text.Replace("`r`n", "`n").Replace("`r", "`n")
             [IO.File]::WriteAllText($output, $text, $utf8NoBom)
           }
 
