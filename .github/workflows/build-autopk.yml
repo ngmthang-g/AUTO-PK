@@ -26,13 +26,13 @@ jobs:
           $parts = Get-ChildItem source/chunks/part* | Sort-Object Name
           if ($parts.Count -ne 9) { throw "Expected 9 source chunks, got $($parts.Count)" }
           $b64 = ($parts | ForEach-Object { [IO.File]::ReadAllText($_.FullName).Trim() }) -join ''
-          [IO.File]::WriteAllBytes('AutoPK_Source_v0.1.0.zip', [Convert]::FromBase64String($b64))
-          $hash = (Get-FileHash AutoPK_Source_v0.1.0.zip -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($hash -ne '5a6855bf4b2fb1e2b6e011379c25b9f8999e8eed01eb139e05169d6ec590527f') {
+          [IO.File]::WriteAllBytes('AutoPK_Source_v0.1.2.zip', [Convert]::FromBase64String($b64))
+          $hash = (Get-FileHash AutoPK_Source_v0.1.2.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne 'b34a3cd46025358a6ad30ff8956afc4e337ff3b3d7bfcdddfd909c767e6cdd1c') {
             throw "Source payload SHA256 mismatch: $hash"
           }
           New-Item -ItemType Directory -Force generated/autopk | Out-Null
-          Expand-Archive AutoPK_Source_v0.1.0.zip -DestinationPath generated/autopk -Force
+          Expand-Archive AutoPK_Source_v0.1.2.zip -DestinationPath generated/autopk -Force
           Copy-Item vendor generated/autopk/vendor -Recurse -Force
           Write-Host "Verified source payload: $hash"
 
@@ -54,15 +54,15 @@ jobs:
         if: steps.compile.outcome == 'success'
         shell: pwsh
         run: |
-          $out = 'dist/ThanLongAutoPK-v0.1.0-win-x64'
+          $out = 'dist/ThanLongAutoPK-v0.1.2-win-x64'
           New-Item -ItemType Directory -Force $out | Out-Null
           Copy-Item build/Release/ThanLongAutoPK.exe $out/
           Copy-Item build/Release/ThanLongCleanRouteBridge.dll $out/
           Copy-Item generated/autopk/README.md $out/
           Copy-Item generated/autopk/PROJECT_KNOWLEDGE.md $out/
-          Compress-Archive -Path "$out/*" -DestinationPath dist/ThanLongAutoPK-v0.1.0-win-x64.zip -Force
-          $runtimeHash = (Get-FileHash dist/ThanLongAutoPK-v0.1.0-win-x64.zip -Algorithm SHA256).Hash.ToLowerInvariant()
-          Set-Content dist/RUNTIME_SHA256.txt "$runtimeHash  ThanLongAutoPK-v0.1.0-win-x64.zip" -Encoding ascii
+          Compress-Archive -Path "$out/*" -DestinationPath dist/ThanLongAutoPK-v0.1.2-win-x64.zip -Force
+          $runtimeHash = (Get-FileHash dist/ThanLongAutoPK-v0.1.2-win-x64.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content dist/RUNTIME_SHA256_v0.1.2.txt "$runtimeHash  ThanLongAutoPK-v0.1.2-win-x64.zip" -Encoding ascii
           Write-Host "Runtime SHA256: $runtimeHash"
 
       - name: Write build status
@@ -75,23 +75,23 @@ jobs:
           $package = '${{ steps.package.outcome }}'
           $status = if ($configure -eq 'success' -and $compile -eq 'success' -and $package -eq 'success') { 'PASS' } else { 'FAIL' }
           @"
-          # AUTO-PK v0.1.0 Build Status
+          # AUTO-PK v0.1.2 Build Status
 
           - Status: **$status**
-          - Source payload SHA256: 5a6855bf4b2fb1e2b6e011379c25b9f8999e8eed01eb139e05169d6ec590527f
+          - Source payload SHA256: b34a3cd46025358a6ad30ff8956afc4e337ff3b3d7bfcdddfd909c767e6cdd1c
           - Configure: **$configure**
           - Compile: **$compile**
           - Package: **$package**
           - Workflow run: $env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID
           - Commit: $env:GITHUB_SHA
-          "@ | Set-Content dist/BUILD_STATUS.md -Encoding utf8
+          "@ | Set-Content dist/BUILD_STATUS_v0.1.2.md -Encoding utf8
 
       - name: Upload Windows x64 artifact
         if: steps.package.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: ThanLongAutoPK-v0.1.0-win-x64
-          path: dist/ThanLongAutoPK-v0.1.0-win-x64.zip
+          name: ThanLongAutoPK-v0.1.2-win-x64
+          path: dist/ThanLongAutoPK-v0.1.2-win-x64.zip
           if-no-files-found: error
           retention-days: 90
 
@@ -101,13 +101,13 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add dist/BUILD_STATUS.md
-          if (Test-Path dist/ThanLongAutoPK-v0.1.0-win-x64.zip) {
-            git add dist/ThanLongAutoPK-v0.1.0-win-x64.zip dist/RUNTIME_SHA256.txt
+          git add dist/BUILD_STATUS_v0.1.2.md
+          if (Test-Path dist/ThanLongAutoPK-v0.1.2-win-x64.zip) {
+            git add dist/ThanLongAutoPK-v0.1.2-win-x64.zip dist/RUNTIME_SHA256_v0.1.2.txt
           }
           git diff --cached --quiet
           if ($LASTEXITCODE -ne 0) {
-            git commit -m "Publish AUTO-PK v0.1.0 Windows x64 build"
+            git commit -m "Publish AUTO-PK v0.1.2 Windows x64 build"
             git push origin HEAD:main
           } else {
             Write-Host "No dist changes to publish"
@@ -116,4 +116,4 @@ jobs:
       - name: Fail workflow when build failed
         if: always() && (steps.configure.outcome != 'success' || steps.compile.outcome != 'success' || steps.package.outcome != 'success')
         shell: pwsh
-        run: throw 'AUTO-PK Windows x64 build failed; see configure/build logs and dist/BUILD_STATUS.md.'
+        run: throw 'AUTO-PK Windows x64 build failed; see configure/build logs and dist/BUILD_STATUS_v0.1.2.md.'
