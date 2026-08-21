@@ -1,0 +1,46 @@
+name: publish-direct-exe-v0.6.2.0
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/publish-direct-exe.yml'
+      - 'PUBLISH_EXE_NOW.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish-direct-files:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract tested runtime
+        shell: pwsh
+        run: |
+          $zip = 'dist\ThanLongItemConsolidator-v0.6.2.0-win-x64.zip'
+          if (!(Test-Path $zip)) { throw 'Tested runtime ZIP is missing' }
+          $expected = '97f6478172bd3266ebf9d78682f89963f5b3caaa2f5f5c6dba3028d1abfe9580'
+          $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          if ($actual -ne $expected) { throw "Runtime ZIP SHA256 mismatch: $actual" }
+          Remove-Item direct-stage -Recurse -Force -ErrorAction SilentlyContinue
+          Expand-Archive $zip direct-stage -Force
+          Copy-Item 'direct-stage\ThanLongItemConsolidator_v0.6.2.0.exe' 'dist\ThanLongItemConsolidator_v0.6.2.0.exe' -Force
+          Copy-Item 'direct-stage\ThanLongCleanRouteBridge.dll' 'dist\ThanLongCleanRouteBridge.dll' -Force
+          $exe = (Get-FileHash 'dist\ThanLongItemConsolidator_v0.6.2.0.exe' -Algorithm SHA256).Hash.ToLower()
+          $dll = (Get-FileHash 'dist\ThanLongCleanRouteBridge.dll' -Algorithm SHA256).Hash.ToLower()
+          @(
+            "$exe  ThanLongItemConsolidator_v0.6.2.0.exe",
+            "$dll  ThanLongCleanRouteBridge.dll"
+          ) | Set-Content 'dist\SHA256_DIRECT_v0.6.2.0.txt'
+      - name: Commit direct EXE and DLL
+        shell: pwsh
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- 'dist/ThanLongItemConsolidator_v0.6.2.0.exe' 'dist/ThanLongCleanRouteBridge.dll' 'dist/SHA256_DIRECT_v0.6.2.0.txt'
+          if (git diff --cached --quiet) { exit 0 }
+          git commit -m 'Publish direct AUTO PK v0.6.2.0 EXE and DLL [skip ci]'
+          git push origin HEAD:main
