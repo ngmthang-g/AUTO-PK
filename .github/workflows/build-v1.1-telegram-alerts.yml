@@ -37,8 +37,8 @@ jobs:
       - name: Rehydrate v1.1 patch overlay
         shell: pwsh
         run: |
-          $parts = Get-ChildItem 'payload-v11\final-*.b64' | Sort-Object Name
-          if ($parts.Count -ne 2) { throw "Expected 2 canonical v1.1 overlay chunks, got $($parts.Count)" }
+          $parts = Get-ChildItem 'payload-v11\canonical-*.b64' | Sort-Object Name
+          if ($parts.Count -ne 8) { throw "Expected 8 canonical v1.1 overlay chunks, got $($parts.Count)" }
           $b64 = ($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
           [IO.File]::WriteAllBytes('v1.1-overlay.zip', [Convert]::FromBase64String($b64))
           $hash = (Get-FileHash 'v1.1-overlay.zip' -Algorithm SHA256).Hash.ToLower()
