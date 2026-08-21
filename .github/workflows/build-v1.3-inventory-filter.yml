@@ -1,0 +1,151 @@
+name: build-v1.3-inventory-filter
+
+on:
+  push:
+    branches:
+      - release/v1.3-inventory-filter
+    paths-ignore:
+      - 'dist/**'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'payload-v13/**'
+      - '.github/workflows/build-v1.3-inventory-filter.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows-x64:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify v1.2 tested source base
+        shell: pwsh
+        run: |
+          $base = 'dist\ThanLongItemConsolidator-v1.2-source.zip'
+          if (!(Test-Path $base)) { throw 'Missing v1.2 source ZIP' }
+          $hash = (Get-FileHash $base -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne 'f34d64e2b7284ad3b4fb0f70d1b9f09b314ef47af12c964d29bd126e1611a12b') {
+            throw "v1.2 source SHA256 mismatch: $hash"
+          }
+
+      - name: Rehydrate v1.3 overlay and patch
+        shell: pwsh
+        run: |
+          $parts = @(Get-ChildItem 'payload-v13\canonical-*.b64' | Sort-Object Name)
+          if ($parts.Count -ne 17) { throw "Expected 17 canonical v1.3 payload chunks, got $($parts.Count)" }
+          $b64 = ($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          [IO.File]::WriteAllBytes('v1.3-overlay.zip', [Convert]::FromBase64String($b64))
+          $overlayHash = (Get-FileHash 'v1.3-overlay.zip' -Algorithm SHA256).Hash.ToLower()
+          if ($overlayHash -ne 'b4fc19b58da0b03d9fd7026381ab6bf4e9ef764dc1a2a1bd9cf70c929ec38c44') {
+            throw "v1.3 overlay SHA256 mismatch: $overlayHash"
+          }
+          New-Item -ItemType Directory -Force overlay | Out-Null
+          Expand-Archive 'v1.3-overlay.zip' overlay -Force
+          if (!(Test-Path 'overlay\v1.3.patch')) { throw 'Missing v1.3.patch inside overlay' }
+          $patchHash = (Get-FileHash 'overlay\v1.3.patch' -Algorithm SHA256).Hash.ToLower()
+          if ($patchHash -ne '3039099e97a359e7df484e69f10efeac3cc28f9476a51e7ef4e069a359a8681e') {
+            throw "v1.3 patch SHA256 mismatch: $patchHash"
+          }
+
+      - name: Reconstruct v1.3 source surgically
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force base-unpack, work | Out-Null
+          Expand-Archive 'dist\ThanLongItemConsolidator-v1.2-source.zip' base-unpack -Force
+          if (Test-Path 'base-unpack\CMakeLists.txt') {
+            $src = (Resolve-Path 'base-unpack').Path
+          } else {
+            $candidates = @(Get-ChildItem 'base-unpack' -Directory | Where-Object { Test-Path (Join-Path $_.FullName 'CMakeLists.txt') })
+            if ($candidates.Count -ne 1) { throw "Cannot identify v1.2 source root; candidates=$($candidates.Count)" }
+            $src = $candidates[0].FullName
+          }
+          Get-ChildItem $src -Force | Copy-Item -Destination work -Recurse -Force
+          git apply --check --directory=work 'overlay\v1.3.patch'
+          if ($LASTEXITCODE -ne 0) { throw 'v1.3 patch does not apply cleanly to tested v1.2 source' }
+          git apply --directory=work 'overlay\v1.3.patch'
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to apply v1.3 patch' }
+          $env:PYTHONUTF8 = '1'
+          python 'work\tools\verify_v13_inventory_filter.py'
+          if ($LASTEXITCODE -ne 0) { throw 'v1.3 verifier failed' }
+          New-Item -ItemType Directory -Force source-stage | Out-Null
+          Get-ChildItem work -Force | Copy-Item -Destination source-stage -Recurse -Force
+
+      - name: Configure x64
+        shell: pwsh
+        run: cmake -S work -B work\build -A x64
+
+      - name: Build Release
+        shell: pwsh
+        run: cmake --build work\build --config Release --parallel
+
+      - name: Run full regression suite
+        shell: pwsh
+        run: |
+          $tests = @(
+            'route_logic_tests.exe',
+            'rotation_logic_tests.exe',
+            'trade_coordinator_logic_tests.exe',
+            'background_ui_logic_tests.exe',
+            'fixed_slot_sell_logic_tests.exe',
+            'unity_geometry_logic_tests.exe',
+            'internal_ui_click_logic_tests.exe',
+            'travel_fight_guard_logic_tests.exe',
+            'auto_fight_retry_logic_tests.exe',
+            'auto_pk_logic_tests.exe',
+            'telegram_logic_tests.exe',
+            'inventory_filter_logic_tests.exe'
+          )
+          foreach ($t in $tests) {
+            & (Join-Path 'work\build\Release' $t)
+            if ($LASTEXITCODE -ne 0) { throw "$t failed with $LASTEXITCODE" }
+          }
+
+      - name: Package tested v1.3 EXE DLL and source
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force stage, dist | Out-Null
+          Copy-Item 'work\build\Release\ThanLongItemConsolidator.exe' 'stage\ThanLongItemConsolidator_v1.3.exe'
+          Copy-Item 'work\build\Release\ThanLongCleanRouteBridge.dll' 'stage\ThanLongCleanRouteBridge.dll'
+          Copy-Item 'work\README.md' 'stage\README.md'
+          Copy-Item 'work\CHANGELOG.md' 'stage\CHANGELOG.md'
+          Copy-Item 'work\VERSION.txt' 'stage\VERSION.txt'
+
+          Copy-Item 'stage\ThanLongItemConsolidator_v1.3.exe' 'dist\ThanLongItemConsolidator_v1.3.exe' -Force
+          Copy-Item 'stage\ThanLongCleanRouteBridge.dll' 'dist\ThanLongCleanRouteBridge.dll' -Force
+          Compress-Archive -Path 'stage\*' -DestinationPath 'dist\ThanLongItemConsolidator-v1.3-win-x64.zip' -Force
+          Compress-Archive -Path 'source-stage\*' -DestinationPath 'dist\ThanLongItemConsolidator-v1.3-source.zip' -Force
+
+          $runtime = (Get-FileHash 'dist\ThanLongItemConsolidator-v1.3-win-x64.zip' -Algorithm SHA256).Hash.ToLower()
+          $source = (Get-FileHash 'dist\ThanLongItemConsolidator-v1.3-source.zip' -Algorithm SHA256).Hash.ToLower()
+          $exe = (Get-FileHash 'dist\ThanLongItemConsolidator_v1.3.exe' -Algorithm SHA256).Hash.ToLower()
+          $dll = (Get-FileHash 'dist\ThanLongCleanRouteBridge.dll' -Algorithm SHA256).Hash.ToLower()
+          @(
+            "$runtime  ThanLongItemConsolidator-v1.3-win-x64.zip",
+            "$source  ThanLongItemConsolidator-v1.3-source.zip",
+            "$exe  ThanLongItemConsolidator_v1.3.exe",
+            "$dll  ThanLongCleanRouteBridge.dll"
+          ) | Set-Content 'dist\SHA256_v1.3.txt'
+
+      - name: Upload v1.3 runtime artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ThanLongItemConsolidator-v1.3-win-x64
+          path: stage
+          if-no-files-found: error
+
+      - name: Publish tested v1.3 files to release branch
+        if: github.event_name == 'push'
+        shell: pwsh
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- 'dist/ThanLongItemConsolidator-v1.3-win-x64.zip' 'dist/ThanLongItemConsolidator-v1.3-source.zip' 'dist/ThanLongItemConsolidator_v1.3.exe' 'dist/ThanLongCleanRouteBridge.dll' 'dist/SHA256_v1.3.txt'
+          if (git diff --cached --quiet) { exit 0 }
+          git commit -m 'Publish v1.3 inventory filter Windows x64 [skip ci]'
+          git push origin "HEAD:$env:GITHUB_REF_NAME"
