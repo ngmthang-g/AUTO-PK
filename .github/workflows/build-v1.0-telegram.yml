@@ -6,6 +6,9 @@ on:
       - release/v1.0-telegram
     paths-ignore:
       - 'dist/**'
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
