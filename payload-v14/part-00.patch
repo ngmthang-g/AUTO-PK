@@ -1,0 +1,122 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index cd3891f..5ee0b77 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,5 +1,12 @@
+ # CHANGELOG
+ 
++## v1.4 — 2026-08-21
++
++- Hotfix `LỌC ĐỒ TAY NẢI`: sparse/keyed managed bag collections no longer abort the full scan with `Managed exception ở object getter`.
++- Bag enumeration is now fail-soft: exact ordinal indexer fast-path -> managed enumerator (including `KeyValuePair.Value`) -> semantic `GetItemAtSite(Bag, position)` fallback.
++- Removed the unsafe blind fallback to an arbitrary one-argument `get_Item`, which could confuse dictionary keys with ordinal indexes.
++- Inventory KEEP / VỨT-HỦY / BÁN policy, AUTO full-bag ordering, Telegram label cleanup, protocol contract and unrelated AutoPK/travel/death logic remain unchanged.
++
+ ## v1.3 — 2026-08-21
+ 
+ - Thêm cửa sổ **Lọc đồ tay nải** đọc item semantic theo live instance.
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 5c2a4a0..57a2e80 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -1,5 +1,5 @@
+ cmake_minimum_required(VERSION 3.24)
+-project(ThanLongItemConsolidator VERSION 1.3.0 LANGUAGES CXX RC)
++project(ThanLongItemConsolidator VERSION 1.4.0 LANGUAGES CXX RC)
+ 
+ if(NOT WIN32)
+     message(FATAL_ERROR "ThanLongItemConsolidator is Windows-only")
+diff --git a/README.md b/README.md
+index 7687445..a76ffc5 100644
+--- a/README.md
++++ b/README.md
+@@ -1,4 +1,9 @@
+-# Thần Long Item Consolidator v1.3
++# Thần Long Item Consolidator v1.4
++
++
++## v1.4 — Hotfix quét tay nải sparse/keyed
++
++Nếu `GetItemsAtSite(Bag)` trả collection có `Count` nhưng indexer là key-based (ví dụ Dictionary), v1.3 có thể ném `Managed exception ở object getter` khi giả định `get_Item(0..Count-1)`. v1.4 không để một getter lỗi làm hỏng cả snapshot: nó thử indexer ordinal chính xác, sau đó managed enumerator và cuối cùng `GetItemAtSite(Bag, position)` cho 100 ô.
+ 
+ 
+ ## v1.3 — Lọc đồ tay nải semantic
+diff --git a/VERSION.txt b/VERSION.txt
+index 7e32cd5..c068b24 100644
+--- a/VERSION.txt
++++ b/VERSION.txt
+@@ -1 +1 @@
+-1.3
++1.4
+diff --git a/resources/app.rc b/resources/app.rc
+index 1fe6bd0..6641199 100644
+--- a/resources/app.rc
++++ b/resources/app.rc
+@@ -13,11 +13,11 @@ BEGIN
+     BEGIN
+       VALUE "CompanyName", "Thang Nguyen\0"
+       VALUE "FileDescription", "Than Long Item Consolidator\0"
+-      VALUE "FileVersion", "1.3.0\0"
++      VALUE "FileVersion", "1.4.0\0"
+       VALUE "InternalName", "ThanLongItemConsolidator\0"
+-      VALUE "OriginalFilename", "ThanLongItemConsolidator_v1.3.exe\0"
++      VALUE "OriginalFilename", "ThanLongItemConsolidator_v1.4.exe\0"
+       VALUE "ProductName", "Than Long Item Consolidator\0"
+-      VALUE "ProductVersion", "1.3.0\0"
++      VALUE "ProductVersion", "1.4.0\0"
+     END
+   END
+   BLOCK "VarFileInfo"
+diff --git a/src/bridge.cpp b/src/bridge.cpp
+index 83746e1..e56fa07 100644
+--- a/src/bridge.cpp
++++ b/src/bridge.cpp
+@@ -845,6 +845,123 @@ const MethodInfo* BagListMethod(const Classes& c) {
+     return method && StaticMethod(method) ? method : nullptr;
+ }
+ 
++const MethodInfo* BagItemAtSiteMethod(const Classes& c) {
++    const MethodInfo* method = FindMethod(c.gameApi, "GetItemAtSite", 2);
++    if (method && StaticMethod(method)) return method;
++    method = FindMethod(c.shared, "GetItemAtSite", 2);
++    return method && StaticMethod(method) ? method : nullptr;
++}
++
++bool TryReadBagIndexed(Il2CppObject* collection, Il2CppClass* cc, std::vector<Il2CppObject*>& items) {
++    items.clear();
++    std::int32_t count = 0;
++    wchar_t ignored[128]{};
++    if (!ScalarGetter(cc, "get_Count", collection, count, ignored, _countof(ignored)) || count < 0 || count > 1000)
++        return false;
++
++    // v1.3 incorrectly fell back to any one-argument get_Item(). A Dictionary<int,T> also has
++    // get_Item(Int32), but its argument is a KEY, not an ordinal index. Sparse bag positions therefore
++    // throw KeyNotFoundException when looping 0..Count-1. Only accept the exact Int32 indexer and
++    // treat any managed exception as a signal to use a safer semantic enumeration path below.
++    const MethodInfo* getItem = ExactMethod(cc, "get_Item", 1, false, "System.Int32");
++    if (!getItem) return false;
++
++    std::vector<Il2CppObject*> candidate;
++    candidate.reserve(static_cast<std::size_t>(count));
++    for (std::int32_t i = 0; i < count; ++i) {
++        std::int32_t index = i;
++        void* itemArgs[] = {&index};
++        Il2CppObject* item = nullptr;
++        wchar_t itemError[96]{};
++        if (!InvokeObjectArgs(getItem, collection, itemArgs, item, itemError, _countof(itemError)))
++            return false;
++        if (item) candidate.push_back(item);
++    }
++    items.swap(candidate);
++    return true;
++}
++
++bool LooksLikeBagItemObject(Il2CppObject* object) {
++    if (!object) return false;
++    Il2CppClass* klass = g_api.object_get_class(object);
++    if (!klass) return false;
++    const bool hasId = FindField(klass, "ID") || FindMethod(klass, "get_ID", 0);
++    const bool hasItemId = FindField(klass, "ItemID") || FindMethod(klass, "get_ItemID", 0);
++    return hasId && hasItemId;
++}
++
