@@ -1,0 +1,99 @@
+name: build-auto-pk-v0.6.2.0
+
+on:
+  push:
+    branches:
+      - release/auto-pk-v0.6.2.0-fast2
+      - main
+    paths-ignore:
+      - 'dist/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows-x64:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Rehydrate and verify source
+        shell: pwsh
+        run: |
+          $parts = Get-ChildItem payload\*.b64 | Sort-Object Name
+          if ($parts.Count -ne 13) { throw "Expected 13 payload chunks, got $($parts.Count)" }
+          $b64 = ($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          [IO.File]::WriteAllBytes('AutoPK_v0.6.2.0_buildable_source.zip', [Convert]::FromBase64String($b64))
+          $hash = (Get-FileHash 'AutoPK_v0.6.2.0_buildable_source.zip' -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne '010794ffb509b50453878b13de3412376f305bfcfcf8a3414d1c1ea9f8edef18') { throw "Source SHA256 mismatch: $hash" }
+          New-Item -ItemType Directory -Force work | Out-Null
+          Expand-Archive 'AutoPK_v0.6.2.0_buildable_source.zip' work -Force
+          python work\tools\verify_v0620_autopk.py
+          if ($LASTEXITCODE -ne 0) { throw 'Auto PK source verification failed' }
+
+      - name: Configure x64
+        shell: pwsh
+        run: cmake -S work -B work\build -A x64
+
+      - name: Build Release
+        shell: pwsh
+        run: cmake --build work\build --config Release --parallel
+
+      - name: Run logic tests
+        shell: pwsh
+        run: |
+          $tests = @(
+            'route_logic_tests.exe',
+            'rotation_logic_tests.exe',
+            'trade_coordinator_logic_tests.exe',
+            'background_ui_logic_tests.exe',
+            'fixed_slot_sell_logic_tests.exe',
+            'unity_geometry_logic_tests.exe',
+            'internal_ui_click_logic_tests.exe',
+            'travel_fight_guard_logic_tests.exe',
+            'auto_fight_retry_logic_tests.exe',
+            'auto_pk_logic_tests.exe'
+          )
+          foreach ($t in $tests) {
+            & (Join-Path 'work\build\Release' $t)
+            if ($LASTEXITCODE -ne 0) { throw "$t failed with $LASTEXITCODE" }
+          }
+
+      - name: Package tested EXE DLL and source
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force stage | Out-Null
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item 'work\build\Release\ThanLongItemConsolidator.exe' 'stage\ThanLongItemConsolidator_v0.6.2.0.exe'
+          Copy-Item 'work\build\Release\ThanLongCleanRouteBridge.dll' 'stage\ThanLongCleanRouteBridge.dll'
+          Copy-Item 'work\README.md' 'stage\README.md'
+          Copy-Item 'work\CHANGELOG.md' 'stage\CHANGELOG.md'
+          Copy-Item 'work\VERSION.txt' 'stage\VERSION.txt'
+          Compress-Archive -Path 'stage\*' -DestinationPath 'dist\ThanLongItemConsolidator-v0.6.2.0-win-x64.zip' -Force
+          Copy-Item 'AutoPK_v0.6.2.0_buildable_source.zip' 'dist\ThanLongItemConsolidator-AutoPK-v0.6.2.0-source.zip'
+          $runtime = (Get-FileHash 'dist\ThanLongItemConsolidator-v0.6.2.0-win-x64.zip' -Algorithm SHA256).Hash.ToLower()
+          $source = (Get-FileHash 'dist\ThanLongItemConsolidator-AutoPK-v0.6.2.0-source.zip' -Algorithm SHA256).Hash.ToLower()
+          @(
+            "$runtime  ThanLongItemConsolidator-v0.6.2.0-win-x64.zip",
+            "$source  ThanLongItemConsolidator-AutoPK-v0.6.2.0-source.zip"
+          ) | Set-Content 'dist\SHA256_v0.6.2.0.txt'
+
+      - name: Upload runtime artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ThanLongItemConsolidator-v0.6.2.0-win-x64
+          path: stage
+          if-no-files-found: error
+
+      - name: Publish tested files to repository
+        if: github.event_name == 'push'
+        shell: pwsh
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- 'dist/ThanLongItemConsolidator-v0.6.2.0-win-x64.zip' 'dist/ThanLongItemConsolidator-AutoPK-v0.6.2.0-source.zip' 'dist/SHA256_v0.6.2.0.txt'
+          if (git diff --cached --quiet) { exit 0 }
+          git commit -m 'Publish AUTO PK v0.6.2.0 Windows x64 [skip ci]'
+          git push origin "HEAD:$env:GITHUB_REF_NAME"
