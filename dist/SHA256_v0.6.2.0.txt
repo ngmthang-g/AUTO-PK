@@ -1,2 +1,2 @@
-97f6478172bd3266ebf9d78682f89963f5b3caaa2f5f5c6dba3028d1abfe9580  ThanLongItemConsolidator-v0.6.2.0-win-x64.zip
+0d56bd12dda0dc1d1d8bec5325ceb555a818f391b73dc8427bcb3c401b3b12b6  ThanLongItemConsolidator-v0.6.2.0-win-x64.zip
 010794ffb509b50453878b13de3412376f305bfcfcf8a3414d1c1ea9f8edef18  ThanLongItemConsolidator-AutoPK-v0.6.2.0-source.zip
