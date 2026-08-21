@@ -66,6 +66,14 @@ jobs:
           git apply -p0 --directory=work 'overlay/controller_v1.patch'
           if ($LASTEXITCODE -ne 0) { throw 'Failed to apply v1.0 controller patch' }
 
+          # MSVC exposed two donor standard-library dependencies that the v0.6.2.0
+          # include list did not have. Add only those headers; no runtime logic changes.
+          python -c "from pathlib import Path; p=Path(r'work/src/controller.cpp'); s=p.read_text(encoding='utf-8'); m='#include <functional>\n'; assert m in s; s=s if '#include <map>' in s else s.replace(m,m+'#include <map>\n#include <set>\n',1); p.write_text(s,encoding='utf-8')"
+          $controller = Get-Content 'work\src\controller.cpp' -Raw
+          if ($controller -notmatch '#include <map>' -or $controller -notmatch '#include <set>') {
+            throw 'v1.0 standard-library header fix was not applied'
+          }
+
           python 'work\tools\verify_v10_telegram_merge.py'
           if ($LASTEXITCODE -ne 0) { throw 'v1.0 merge verifier failed' }
 
