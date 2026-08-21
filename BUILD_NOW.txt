@@ -1,0 +1,2 @@
+Build AUTO PK v0.6.2.0 Windows x64
+Source SHA256: 010794ffb509b50453878b13de3412376f305bfcfcf8a3414d1c1ea9f8edef18
