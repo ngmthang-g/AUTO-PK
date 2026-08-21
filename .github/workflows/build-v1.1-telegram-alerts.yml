@@ -38,18 +38,22 @@ jobs:
         shell: pwsh
         run: |
           $parts = Get-ChildItem 'payload-v11\part-*.b64' | Sort-Object Name
-          if ($parts.Count -ne 2) { throw "Expected 2 v1.1 overlay chunks, got $($parts.Count)" }
+          if ($parts.Count -ne 8) { throw "Expected 8 v1.1 overlay chunks, got $($parts.Count)" }
           $b64 = ($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
           [IO.File]::WriteAllBytes('v1.1-overlay.zip', [Convert]::FromBase64String($b64))
           $hash = (Get-FileHash 'v1.1-overlay.zip' -Algorithm SHA256).Hash.ToLower()
-          if ($hash -ne 'fc708de2160ad2beaa2d6deec1d636b079fb9e5f94eef76c0b609eb1ca82b8a3') {
+          if ($hash -ne '711cc1c231114cd987baae6e663cf4c813a1009b53fd7815d585be14959a39a6') {
             throw "v1.1 overlay SHA256 mismatch: $hash"
           }
           New-Item -ItemType Directory -Force overlay | Out-Null
           Expand-Archive 'v1.1-overlay.zip' overlay -Force
           $patchHash = (Get-FileHash 'overlay\v1.1.patch' -Algorithm SHA256).Hash.ToLower()
-          if ($patchHash -ne '1a5630297cf98ec2957c361ab6b66f0cc1fe84325c37e591db4aaa60529c9d74') {
+          if ($patchHash -ne '86edce9d7734cabb5a41f6f61b44ae7ba237a339466706f6b9102a5c0d92fc81') {
             throw "v1.1 patch SHA256 mismatch: $patchHash"
+          }
+          $verifierHash = (Get-FileHash 'overlay\verify_v11_telegram_observer.py' -Algorithm SHA256).Hash.ToLower()
+          if ($verifierHash -ne 'bf84339740c22e35368770df9cec48efb71c96f254d4ef6f5803a3d13e71eb23') {
+            throw "v1.1 verifier SHA256 mismatch: $verifierHash"
           }
 
       - name: Reconstruct v1.1 source surgically
@@ -71,6 +75,7 @@ jobs:
           git apply '..\overlay\v1.1.patch'
           if ($LASTEXITCODE -ne 0) { throw 'Failed to apply v1.1 patch' }
           Pop-Location
+          Copy-Item 'overlay\verify_v11_telegram_observer.py' 'work\tools\verify_v11_telegram_observer.py' -Force
           python 'work\tools\verify_v11_telegram_observer.py'
           if ($LASTEXITCODE -ne 0) { throw 'v1.1 verifier failed' }
           New-Item -ItemType Directory -Force source-stage | Out-Null
