@@ -69,13 +69,12 @@ jobs:
             $src = $candidates[0].FullName
           }
           Get-ChildItem $src -Force | Copy-Item -Destination work -Recurse -Force
-          Push-Location work
-          git apply --check '..\overlay\v1.1.patch'
+          git apply --check --directory=work 'overlay\v1.1.patch'
           if ($LASTEXITCODE -ne 0) { throw 'v1.1 patch does not apply cleanly to tested v1.0 source' }
-          git apply '..\overlay\v1.1.patch'
+          git apply --directory=work 'overlay\v1.1.patch'
           if ($LASTEXITCODE -ne 0) { throw 'Failed to apply v1.1 patch' }
-          Pop-Location
           Copy-Item 'overlay\verify_v11_telegram_observer.py' 'work\tools\verify_v11_telegram_observer.py' -Force
+          $env:PYTHONUTF8 = '1'
           python 'work\tools\verify_v11_telegram_observer.py'
           if ($LASTEXITCODE -ne 0) { throw 'v1.1 verifier failed' }
           New-Item -ItemType Directory -Force source-stage | Out-Null
