@@ -71,13 +71,19 @@ jobs:
           Copy-Item 'work\README.md' 'stage\README.md'
           Copy-Item 'work\CHANGELOG.md' 'stage\CHANGELOG.md'
           Copy-Item 'work\VERSION.txt' 'stage\VERSION.txt'
+          Copy-Item 'work\build\Release\ThanLongItemConsolidator.exe' 'dist\ThanLongItemConsolidator_v0.6.2.0.exe' -Force
+          Copy-Item 'work\build\Release\ThanLongCleanRouteBridge.dll' 'dist\ThanLongCleanRouteBridge.dll' -Force
           Compress-Archive -Path 'stage\*' -DestinationPath 'dist\ThanLongItemConsolidator-v0.6.2.0-win-x64.zip' -Force
           Copy-Item 'AutoPK_v0.6.2.0_buildable_source.zip' 'dist\ThanLongItemConsolidator-AutoPK-v0.6.2.0-source.zip'
           $runtime = (Get-FileHash 'dist\ThanLongItemConsolidator-v0.6.2.0-win-x64.zip' -Algorithm SHA256).Hash.ToLower()
           $source = (Get-FileHash 'dist\ThanLongItemConsolidator-AutoPK-v0.6.2.0-source.zip' -Algorithm SHA256).Hash.ToLower()
+          $exe = (Get-FileHash 'dist\ThanLongItemConsolidator_v0.6.2.0.exe' -Algorithm SHA256).Hash.ToLower()
+          $dll = (Get-FileHash 'dist\ThanLongCleanRouteBridge.dll' -Algorithm SHA256).Hash.ToLower()
           @(
             "$runtime  ThanLongItemConsolidator-v0.6.2.0-win-x64.zip",
-            "$source  ThanLongItemConsolidator-AutoPK-v0.6.2.0-source.zip"
+            "$source  ThanLongItemConsolidator-AutoPK-v0.6.2.0-source.zip",
+            "$exe  ThanLongItemConsolidator_v0.6.2.0.exe",
+            "$dll  ThanLongCleanRouteBridge.dll"
           ) | Set-Content 'dist\SHA256_v0.6.2.0.txt'
 
       - name: Upload runtime artifact
@@ -93,7 +99,7 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -- 'dist/ThanLongItemConsolidator-v0.6.2.0-win-x64.zip' 'dist/ThanLongItemConsolidator-AutoPK-v0.6.2.0-source.zip' 'dist/SHA256_v0.6.2.0.txt'
+          git add -- 'dist/ThanLongItemConsolidator-v0.6.2.0-win-x64.zip' 'dist/ThanLongItemConsolidator-AutoPK-v0.6.2.0-source.zip' 'dist/ThanLongItemConsolidator_v0.6.2.0.exe' 'dist/ThanLongCleanRouteBridge.dll' 'dist/SHA256_v0.6.2.0.txt'
           if (git diff --cached --quiet) { exit 0 }
           git commit -m 'Publish AUTO PK v0.6.2.0 Windows x64 [skip ci]'
           git push origin "HEAD:$env:GITHUB_REF_NAME"
