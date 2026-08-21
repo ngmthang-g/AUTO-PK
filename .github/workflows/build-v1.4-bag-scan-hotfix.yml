@@ -40,6 +40,7 @@ jobs:
           $parts = @(Get-ChildItem 'payload-v14\part-*.patch' | Sort-Object Name)
           if ($parts.Count -ne 4) { throw "Expected 4 v1.4 patch parts, got $($parts.Count)" }
           $patch = ($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          $patch = $patch -replace "`r`n", "`n"
           [IO.File]::WriteAllText('v1.4.patch', $patch, [Text.UTF8Encoding]::new($false))
           $hash = (Get-FileHash 'v1.4.patch' -Algorithm SHA256).Hash.ToLower()
           if ($hash -ne '168f96f2f321ad26b101a8af99910a3b4ab4751a0dc5a655ec05a08b028b7d9c') {
