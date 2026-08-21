@@ -1,2 +1,4 @@
-85cd1c3ba497dc0934187f7cfc1de5a849afeee967ceb8770accb8cfe22484c3  ThanLongItemConsolidator-v0.6.2.0-win-x64.zip
+67cb8b708dcc7a8bed4f56a6e6bef36710754d1728ff52ffac1add9d20801ec1  ThanLongItemConsolidator-v0.6.2.0-win-x64.zip
 010794ffb509b50453878b13de3412376f305bfcfcf8a3414d1c1ea9f8edef18  ThanLongItemConsolidator-AutoPK-v0.6.2.0-source.zip
+203627d2c99de7bd25ac9f5bfd88a7c6dbc40b5277cbaafd6e50bec18f09ee5f  ThanLongItemConsolidator_v0.6.2.0.exe
+7c972e50519fa602c7e6192b90c1c9e60aa4a28b9f0bd403e147b9f8b4584351  ThanLongCleanRouteBridge.dll
