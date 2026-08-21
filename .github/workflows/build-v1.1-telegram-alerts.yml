@@ -37,18 +37,18 @@ jobs:
       - name: Rehydrate v1.1 patch overlay
         shell: pwsh
         run: |
-          $parts = Get-ChildItem 'payload-v11\part-*.b64' | Sort-Object Name
-          if ($parts.Count -ne 8) { throw "Expected 8 v1.1 overlay chunks, got $($parts.Count)" }
+          $parts = Get-ChildItem 'payload-v11\final-*.b64' | Sort-Object Name
+          if ($parts.Count -ne 2) { throw "Expected 2 canonical v1.1 overlay chunks, got $($parts.Count)" }
           $b64 = ($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
           [IO.File]::WriteAllBytes('v1.1-overlay.zip', [Convert]::FromBase64String($b64))
           $hash = (Get-FileHash 'v1.1-overlay.zip' -Algorithm SHA256).Hash.ToLower()
-          if ($hash -ne '711cc1c231114cd987baae6e663cf4c813a1009b53fd7815d585be14959a39a6') {
+          if ($hash -ne '3817919c5e6e6120384da5c328de329ba622ea7112f08887e9cbd0dfed2ac82c') {
             throw "v1.1 overlay SHA256 mismatch: $hash"
           }
           New-Item -ItemType Directory -Force overlay | Out-Null
           Expand-Archive 'v1.1-overlay.zip' overlay -Force
           $patchHash = (Get-FileHash 'overlay\v1.1.patch' -Algorithm SHA256).Hash.ToLower()
-          if ($patchHash -ne '86edce9d7734cabb5a41f6f61b44ae7ba237a339466706f6b9102a5c0d92fc81') {
+          if ($patchHash -ne '735f912acd2592c264a106d72a9f305fcd8d28d95637358926564b8267176469') {
             throw "v1.1 patch SHA256 mismatch: $patchHash"
           }
           $verifierHash = (Get-FileHash 'overlay\verify_v11_telegram_observer.py' -Algorithm SHA256).Hash.ToLower()
