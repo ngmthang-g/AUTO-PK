@@ -1,0 +1,150 @@
+name: build-v1.1-telegram-alerts
+
+on:
+  push:
+    branches:
+      - release/v1.1-telegram-alerts
+    paths-ignore:
+      - 'dist/**'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'payload-v11/**'
+      - '.github/workflows/build-v1.1-telegram-alerts.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows-x64:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify v1.0 tested source base
+        shell: pwsh
+        run: |
+          $base = 'dist\ThanLongItemConsolidator-v1.0-source.zip'
+          if (!(Test-Path $base)) { throw 'Missing v1.0 source ZIP' }
+          $hash = (Get-FileHash $base -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne '357f454beafbdb39a05d67c419aa64b8ca2b716e6073833b46958046a5a6e780') {
+            throw "v1.0 source SHA256 mismatch: $hash"
+          }
+
+      - name: Rehydrate v1.1 patch overlay
+        shell: pwsh
+        run: |
+          $parts = Get-ChildItem 'payload-v11\part-*.b64' | Sort-Object Name
+          if ($parts.Count -ne 2) { throw "Expected 2 v1.1 overlay chunks, got $($parts.Count)" }
+          $b64 = ($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          [IO.File]::WriteAllBytes('v1.1-overlay.zip', [Convert]::FromBase64String($b64))
+          $hash = (Get-FileHash 'v1.1-overlay.zip' -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne 'fc708de2160ad2beaa2d6deec1d636b079fb9e5f94eef76c0b609eb1ca82b8a3') {
+            throw "v1.1 overlay SHA256 mismatch: $hash"
+          }
+          New-Item -ItemType Directory -Force overlay | Out-Null
+          Expand-Archive 'v1.1-overlay.zip' overlay -Force
+          $patchHash = (Get-FileHash 'overlay\v1.1.patch' -Algorithm SHA256).Hash.ToLower()
+          if ($patchHash -ne '1a5630297cf98ec2957c361ab6b66f0cc1fe84325c37e591db4aaa60529c9d74') {
+            throw "v1.1 patch SHA256 mismatch: $patchHash"
+          }
+
+      - name: Reconstruct v1.1 source surgically
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force base-unpack, work | Out-Null
+          Expand-Archive 'dist\ThanLongItemConsolidator-v1.0-source.zip' base-unpack -Force
+          if (Test-Path 'base-unpack\CMakeLists.txt') {
+            $src = (Resolve-Path 'base-unpack').Path
+          } else {
+            $candidates = @(Get-ChildItem 'base-unpack' -Directory | Where-Object { Test-Path (Join-Path $_.FullName 'CMakeLists.txt') })
+            if ($candidates.Count -ne 1) { throw "Cannot identify v1.0 source root; candidates=$($candidates.Count)" }
+            $src = $candidates[0].FullName
+          }
+          Get-ChildItem $src -Force | Copy-Item -Destination work -Recurse -Force
+          Push-Location work
+          git apply --check '..\overlay\v1.1.patch'
+          if ($LASTEXITCODE -ne 0) { throw 'v1.1 patch does not apply cleanly to tested v1.0 source' }
+          git apply '..\overlay\v1.1.patch'
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to apply v1.1 patch' }
+          Pop-Location
+          python 'work\tools\verify_v11_telegram_observer.py'
+          if ($LASTEXITCODE -ne 0) { throw 'v1.1 verifier failed' }
+          New-Item -ItemType Directory -Force source-stage | Out-Null
+          Get-ChildItem work -Force | Copy-Item -Destination source-stage -Recurse -Force
+
+      - name: Configure x64
+        shell: pwsh
+        run: cmake -S work -B work\build -A x64
+
+      - name: Build Release
+        shell: pwsh
+        run: cmake --build work\build --config Release --parallel
+
+      - name: Run full regression suite
+        shell: pwsh
+        run: |
+          $tests = @(
+            'route_logic_tests.exe',
+            'rotation_logic_tests.exe',
+            'trade_coordinator_logic_tests.exe',
+            'background_ui_logic_tests.exe',
+            'fixed_slot_sell_logic_tests.exe',
+            'unity_geometry_logic_tests.exe',
+            'internal_ui_click_logic_tests.exe',
+            'travel_fight_guard_logic_tests.exe',
+            'auto_fight_retry_logic_tests.exe',
+            'auto_pk_logic_tests.exe',
+            'telegram_logic_tests.exe'
+          )
+          foreach ($t in $tests) {
+            & (Join-Path 'work\build\Release' $t)
+            if ($LASTEXITCODE -ne 0) { throw "$t failed with $LASTEXITCODE" }
+          }
+
+      - name: Package tested v1.1 EXE DLL and source
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force stage, dist | Out-Null
+          Copy-Item 'work\build\Release\ThanLongItemConsolidator.exe' 'stage\ThanLongItemConsolidator_v1.1.exe'
+          Copy-Item 'work\build\Release\ThanLongCleanRouteBridge.dll' 'stage\ThanLongCleanRouteBridge.dll'
+          Copy-Item 'work\README.md' 'stage\README.md'
+          Copy-Item 'work\CHANGELOG.md' 'stage\CHANGELOG.md'
+          Copy-Item 'work\VERSION.txt' 'stage\VERSION.txt'
+
+          Copy-Item 'stage\ThanLongItemConsolidator_v1.1.exe' 'dist\ThanLongItemConsolidator_v1.1.exe' -Force
+          Copy-Item 'stage\ThanLongCleanRouteBridge.dll' 'dist\ThanLongCleanRouteBridge.dll' -Force
+          Compress-Archive -Path 'stage\*' -DestinationPath 'dist\ThanLongItemConsolidator-v1.1-win-x64.zip' -Force
+          Compress-Archive -Path 'source-stage\*' -DestinationPath 'dist\ThanLongItemConsolidator-v1.1-source.zip' -Force
+
+          $runtime = (Get-FileHash 'dist\ThanLongItemConsolidator-v1.1-win-x64.zip' -Algorithm SHA256).Hash.ToLower()
+          $source = (Get-FileHash 'dist\ThanLongItemConsolidator-v1.1-source.zip' -Algorithm SHA256).Hash.ToLower()
+          $exe = (Get-FileHash 'dist\ThanLongItemConsolidator_v1.1.exe' -Algorithm SHA256).Hash.ToLower()
+          $dll = (Get-FileHash 'dist\ThanLongCleanRouteBridge.dll' -Algorithm SHA256).Hash.ToLower()
+          @(
+            "$runtime  ThanLongItemConsolidator-v1.1-win-x64.zip",
+            "$source  ThanLongItemConsolidator-v1.1-source.zip",
+            "$exe  ThanLongItemConsolidator_v1.1.exe",
+            "$dll  ThanLongCleanRouteBridge.dll"
+          ) | Set-Content 'dist\SHA256_v1.1.txt'
+
+      - name: Upload v1.1 runtime artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ThanLongItemConsolidator-v1.1-win-x64
+          path: stage
+          if-no-files-found: error
+
+      - name: Publish tested v1.1 files to release branch
+        if: github.event_name == 'push'
+        shell: pwsh
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- 'dist/ThanLongItemConsolidator-v1.1-win-x64.zip' 'dist/ThanLongItemConsolidator-v1.1-source.zip' 'dist/ThanLongItemConsolidator_v1.1.exe' 'dist/ThanLongCleanRouteBridge.dll' 'dist/SHA256_v1.1.txt'
+          if (git diff --cached --quiet) { exit 0 }
+          git commit -m 'Publish v1.1 Telegram alerts Windows x64 [skip ci]'
+          git push origin "HEAD:$env:GITHUB_REF_NAME"
