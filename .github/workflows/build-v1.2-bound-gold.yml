@@ -1,0 +1,143 @@
+name: build-v1.2-bound-gold
+
+on:
+  push:
+    branches:
+      - release/v1.2-bound-gold-baseline
+    paths-ignore:
+      - 'dist/**'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'payload-v12/**'
+      - '.github/workflows/build-v1.2-bound-gold.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows-x64:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify v1.1 tested source base
+        shell: pwsh
+        run: |
+          $base = 'dist\ThanLongItemConsolidator-v1.1-source.zip'
+          if (!(Test-Path $base)) { throw 'Missing v1.1 source ZIP' }
+          $hash = (Get-FileHash $base -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne 'e57aa524ec66101eeed59b47cbf60a3c6cebd9d1ba34c8efb46c504878616ec9') {
+            throw "v1.1 source SHA256 mismatch: $hash"
+          }
+
+      - name: Rehydrate v1.2 patch
+        shell: pwsh
+        run: |
+          $parts = Get-ChildItem 'payload-v12\canonical-*.b64' | Sort-Object Name
+          if ($parts.Count -ne 6) { throw "Expected 6 canonical v1.2 patch chunks, got $($parts.Count)" }
+          $b64 = ($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          [IO.File]::WriteAllBytes('v1.2.patch', [Convert]::FromBase64String($b64))
+          $hash = (Get-FileHash 'v1.2.patch' -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne '6c341db505b13a53a0884978ab7d7b72a22eb21016a9230f8aa516bc28dffd06') {
+            throw "v1.2 patch SHA256 mismatch: $hash"
+          }
+
+      - name: Reconstruct v1.2 source surgically
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force base-unpack, work | Out-Null
+          Expand-Archive 'dist\ThanLongItemConsolidator-v1.1-source.zip' base-unpack -Force
+          if (Test-Path 'base-unpack\CMakeLists.txt') {
+            $src = (Resolve-Path 'base-unpack').Path
+          } else {
+            $candidates = @(Get-ChildItem 'base-unpack' -Directory | Where-Object { Test-Path (Join-Path $_.FullName 'CMakeLists.txt') })
+            if ($candidates.Count -ne 1) { throw "Cannot identify v1.1 source root; candidates=$($candidates.Count)" }
+            $src = $candidates[0].FullName
+          }
+          Get-ChildItem $src -Force | Copy-Item -Destination work -Recurse -Force
+          git apply --check --directory=work 'v1.2.patch'
+          if ($LASTEXITCODE -ne 0) { throw 'v1.2 patch does not apply cleanly to tested v1.1 source' }
+          git apply --directory=work 'v1.2.patch'
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to apply v1.2 patch' }
+          $env:PYTHONUTF8 = '1'
+          python 'work\tools\verify_v12_bound_gold.py'
+          if ($LASTEXITCODE -ne 0) { throw 'v1.2 verifier failed' }
+          New-Item -ItemType Directory -Force source-stage | Out-Null
+          Get-ChildItem work -Force | Copy-Item -Destination source-stage -Recurse -Force
+
+      - name: Configure x64
+        shell: pwsh
+        run: cmake -S work -B work\build -A x64
+
+      - name: Build Release
+        shell: pwsh
+        run: cmake --build work\build --config Release --parallel
+
+      - name: Run full regression suite
+        shell: pwsh
+        run: |
+          $tests = @(
+            'route_logic_tests.exe',
+            'rotation_logic_tests.exe',
+            'trade_coordinator_logic_tests.exe',
+            'background_ui_logic_tests.exe',
+            'fixed_slot_sell_logic_tests.exe',
+            'unity_geometry_logic_tests.exe',
+            'internal_ui_click_logic_tests.exe',
+            'travel_fight_guard_logic_tests.exe',
+            'auto_fight_retry_logic_tests.exe',
+            'auto_pk_logic_tests.exe',
+            'telegram_logic_tests.exe'
+          )
+          foreach ($t in $tests) {
+            & (Join-Path 'work\build\Release' $t)
+            if ($LASTEXITCODE -ne 0) { throw "$t failed with $LASTEXITCODE" }
+          }
+
+      - name: Package tested v1.2 EXE DLL and source
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force stage, dist | Out-Null
+          Copy-Item 'work\build\Release\ThanLongItemConsolidator.exe' 'stage\ThanLongItemConsolidator_v1.2.exe'
+          Copy-Item 'work\build\Release\ThanLongCleanRouteBridge.dll' 'stage\ThanLongCleanRouteBridge.dll'
+          Copy-Item 'work\README.md' 'stage\README.md'
+          Copy-Item 'work\CHANGELOG.md' 'stage\CHANGELOG.md'
+          Copy-Item 'work\VERSION.txt' 'stage\VERSION.txt'
+
+          Copy-Item 'stage\ThanLongItemConsolidator_v1.2.exe' 'dist\ThanLongItemConsolidator_v1.2.exe' -Force
+          Copy-Item 'stage\ThanLongCleanRouteBridge.dll' 'dist\ThanLongCleanRouteBridge.dll' -Force
+          Compress-Archive -Path 'stage\*' -DestinationPath 'dist\ThanLongItemConsolidator-v1.2-win-x64.zip' -Force
+          Compress-Archive -Path 'source-stage\*' -DestinationPath 'dist\ThanLongItemConsolidator-v1.2-source.zip' -Force
+
+          $runtime = (Get-FileHash 'dist\ThanLongItemConsolidator-v1.2-win-x64.zip' -Algorithm SHA256).Hash.ToLower()
+          $source = (Get-FileHash 'dist\ThanLongItemConsolidator-v1.2-source.zip' -Algorithm SHA256).Hash.ToLower()
+          $exe = (Get-FileHash 'dist\ThanLongItemConsolidator_v1.2.exe' -Algorithm SHA256).Hash.ToLower()
+          $dll = (Get-FileHash 'dist\ThanLongCleanRouteBridge.dll' -Algorithm SHA256).Hash.ToLower()
+          @(
+            "$runtime  ThanLongItemConsolidator-v1.2-win-x64.zip",
+            "$source  ThanLongItemConsolidator-v1.2-source.zip",
+            "$exe  ThanLongItemConsolidator_v1.2.exe",
+            "$dll  ThanLongCleanRouteBridge.dll"
+          ) | Set-Content 'dist\SHA256_v1.2.txt'
+
+      - name: Upload v1.2 runtime artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ThanLongItemConsolidator-v1.2-win-x64
+          path: stage
+          if-no-files-found: error
+
+      - name: Publish tested v1.2 files to release branch
+        if: github.event_name == 'push'
+        shell: pwsh
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- 'dist/ThanLongItemConsolidator-v1.2-win-x64.zip' 'dist/ThanLongItemConsolidator-v1.2-source.zip' 'dist/ThanLongItemConsolidator_v1.2.exe' 'dist/ThanLongCleanRouteBridge.dll' 'dist/SHA256_v1.2.txt'
+          if (git diff --cached --quiet) { exit 0 }
+          git commit -m 'Publish v1.2 bound-gold baseline Windows x64 [skip ci]'
+          git push origin "HEAD:$env:GITHUB_REF_NAME"
