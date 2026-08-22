@@ -1,62 +1,16 @@
-diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 46747a6..b376a5b 100644
---- a/CHANGELOG.md
-+++ b/CHANGELOG.md
-@@ -1,5 +1,10 @@
- # CHANGELOG
- 
-+## v1.5 — 2026-08-22
-+- Chỉ thêm DirectSell T1; không đổi AUTO SELL, route, trade, Auto PK, Telegram hay inventory policy hiện tại.
-+- Protocol `0x00010623`, command test `DirectSellTest=22`, packet test `200036`.
-+- T1 yêu cầu shop NPC đang mở và chỉ PASS khi selected live instance biến mất sau re-scan.
-+
- ## v1.4 — 2026-08-21
- 
- - Hotfix `LỌC ĐỒ TAY NẢI`: sparse/keyed managed bag collections no longer abort the full scan with `Managed exception ở object getter`.
 diff --git a/CMakeLists.txt b/CMakeLists.txt
 index feed697..ce083f4 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -1,5 +1,5 @@
- cmake_minimum_required(VERSION 3.24)
+@@ -2 +2 @@ cmake_minimum_required(VERSION 3.24)
 -project(ThanLongItemConsolidator VERSION 1.4.0 LANGUAGES CXX RC)
 +project(ThanLongItemConsolidator VERSION 1.5.0 LANGUAGES CXX RC)
- 
- if(NOT WIN32)
-     message(FATAL_ERROR "ThanLongItemConsolidator is Windows-only")
-@@ -46,10 +46,12 @@ add_executable(telegram_logic_tests src/telegram_logic_test.cpp)
- target_include_directories(telegram_logic_tests PRIVATE src)
- add_executable(inventory_filter_logic_tests src/inventory_filter_logic_test.cpp)
- target_include_directories(inventory_filter_logic_tests PRIVATE src)
+@@ -48,0 +49,2 @@ target_include_directories(inventory_filter_logic_tests PRIVATE src)
 +add_executable(direct_sell_logic_tests src/direct_sell_logic_test.cpp)
 +target_include_directories(direct_sell_logic_tests PRIVATE src)
- 
- if(MSVC)
-     target_compile_options(ThanLongCleanRouteBridge PRIVATE /utf-8 /W4 /permissive- /FIstdlib.h)
+@@ -52 +54 @@ if(MSVC)
 -    foreach(t ThanLongItemConsolidator route_logic_tests rotation_logic_tests trade_coordinator_logic_tests background_ui_logic_tests fixed_slot_sell_logic_tests unity_geometry_logic_tests internal_ui_click_logic_tests travel_fight_guard_logic_tests auto_fight_retry_logic_tests auto_pk_logic_tests telegram_logic_tests inventory_filter_logic_tests)
 +    foreach(t ThanLongItemConsolidator route_logic_tests rotation_logic_tests trade_coordinator_logic_tests background_ui_logic_tests fixed_slot_sell_logic_tests unity_geometry_logic_tests internal_ui_click_logic_tests travel_fight_guard_logic_tests auto_fight_retry_logic_tests auto_pk_logic_tests telegram_logic_tests inventory_filter_logic_tests direct_sell_logic_tests)
-         target_compile_options(${t} PRIVATE /utf-8 /W4 /permissive-)
-     endforeach()
- endif()
-diff --git a/README.md b/README.md
-index 808abac..ed0ba74 100644
---- a/README.md
-+++ b/README.md
-@@ -1,6 +1,13 @@
--# Thần Long Item Consolidator v1.4
-+# Thần Long Item Consolidator v1.5
- 
- 
-+## v1.5 — DirectSell T1 (test riêng)
-+
-+- Không thay flow AUTO SELL hiện tại.
-+- Thêm nút `TEST DIRECT SELL T1 • 1 ITEM` trong LỌC ĐỒ TAY NẢI.
-+- Chỉ khi shop NPC đã mở, tool re-scan live InstanceID, kiểm `IsItemSellable`, đọc `NpcShopID/ShopID`, gửi `200036` với payload `instanceID:NpcShopID:ShopID`, rồi re-scan xác nhận đúng instance biến mất.
-+- Không đọc được shop context hoặc server không làm mất instance => báo FAIL; test không tự nối vào AUTO.
-+
- ## v1.4 — Hotfix quét tay nải sparse/keyed
- 
- Nếu `GetItemsAtSite(Bag)` trả collection có `Count` nhưng indexer là key-based (ví dụ Dictionary), v1.3 có thể ném `Managed exception ở object getter` khi giả định `get_Item(0..Count-1)`. v1.4 không để một getter lỗi làm hỏng cả snapshot: nó thử indexer ordinal chính xác, sau đó managed enumerator và cuối cùng `GetItemAtSite(Bag, position)` cho 100 ô.
 diff --git a/VERSION.txt b/VERSION.txt
 index cb16f2b..84e6cb6 100644
 --- a/VERSION.txt
@@ -68,48 +22,27 @@ diff --git a/resources/app.rc b/resources/app.rc
 index 2fc4c86..6583a96 100644
 --- a/resources/app.rc
 +++ b/resources/app.rc
-@@ -1,8 +1,8 @@
- #include <windows.h>
- 1 RT_MANIFEST "app.manifest"
- 1 VERSIONINFO
+@@ -4,2 +4,2 @@
 -FILEVERSION 1,3,0,0
 -PRODUCTVERSION 1,3,0,0
 +FILEVERSION 1,5,0,0
 +PRODUCTVERSION 1,5,0,0
- FILEFLAGSMASK 0x3fL
- FILEOS 0x40004L
- FILETYPE 0x1L
-@@ -13,11 +13,11 @@ BEGIN
-     BEGIN
-       VALUE "CompanyName", "Thang Nguyen\0"
-       VALUE "FileDescription", "Than Long Item Consolidator\0"
+@@ -16 +16 @@ BEGIN
 -      VALUE "FileVersion", "1.4.0\0"
 +      VALUE "FileVersion", "1.5.0\0"
-       VALUE "InternalName", "ThanLongItemConsolidator\0"
+@@ -18 +18 @@ BEGIN
 -      VALUE "OriginalFilename", "ThanLongItemConsolidator_v1.4.exe\0"
 +      VALUE "OriginalFilename", "ThanLongItemConsolidator_v1.5.exe\0"
-       VALUE "ProductName", "Than Long Item Consolidator\0"
+@@ -20 +20 @@ BEGIN
 -      VALUE "ProductVersion", "1.4.0\0"
 +      VALUE "ProductVersion", "1.5.0\0"
-     END
-   END
-   BLOCK "VarFileInfo"
 diff --git a/src/bridge.cpp b/src/bridge.cpp
-index 045fef1..8a1b34b 100644
+index 045fef1..4c97587 100644
 --- a/src/bridge.cpp
 +++ b/src/bridge.cpp
-@@ -11,6 +11,7 @@
- #include "fixed_slot_sell_logic.h"
- #include "internal_ui_click_logic.h"
- #include "protocol.h"
+@@ -13,0 +14 @@
 +#include "direct_sell_logic.h"
- #include "unity_geometry_logic.h"
- 
- using namespace cleanroute;
-@@ -1835,6 +1836,77 @@ bool InvokeLuaAction(const char* uiName, const char* functionName,
- }
- 
- 
+@@ -1837,0 +1839,71 @@ bool InvokeLuaAction(const char* uiName, const char* functionName,
 +bool ReadPositiveShopMember(Il2CppObject* object, const char* const* names, std::size_t nameCount,
 +                            std::int64_t& value, std::wstring& matchedName) {
 +    value = 0; matchedName.clear();
@@ -142,16 +75,16 @@ index 045fef1..8a1b34b 100644
 +        const bool gotNpc = ReadPositiveShopMember(ui, npcNames, _countof(npcNames), npcShopID, npcField);
 +        const bool gotShop = ReadPositiveShopMember(ui, shopNames, _countof(shopNames), shopID, shopField);
 +        if (gotNpc && gotShop) {
-+            SetText(detail, cap, L"Shop context OK • NpcShopID="); AppendInt64(detail, cap, npcShopID);
-+            Append(detail, cap, L" • ShopID="); AppendInt64(detail, cap, shopID);
-+          Append(detail, cap, L" • UI=");
++            SetText(detail, cap, L"T1 shop context OK; NpcShopID="); AppendInt64(detail, cap, npcShopID);
++            Append(detail, cap, L"; ShopID="); AppendInt64(detail, cap, shopID);
++            Append(detail, cap, L"; UI=");
 +            std::wstring uiWide; for (const char* p = uiName; *p; ++p) uiWide.push_back(static_cast<unsigned char>(*p));
 +            Append(detail, cap, uiWide.c_str());
 +            return true;
 +        }
 +        npcShopID = 0; shopID = 0;
 +    }
-+    SetText(detail, cap, L"Không đọc được NpcShopID/ShopID từ shop UI hiện hành; T1 không gửi packet");
++    SetText(detail, cap, L"T1 cannot read NpcShopID/ShopID from current shop UI; packet not sent");
 +    return false;
 +}
 +
@@ -164,9 +97,9 @@ index 045fef1..8a1b34b 100644
 +    std::int64_t npcShopID = 0, shopID = 0;
 +    if (!FindCurrentShopContext(npcShopID, shopID, detail, cap)) return false;
 +    if (!direct_sell_logic::CanTestSell(item.sellable != 0, item.itemID, npcShopID, shopID)) {
-+        if (!item.sellable) SetText(detail, cap, L"T1 chặn�,"2 không hợp lệi");
-+        else if (direct_sell_logic::IsQuestFamily(item.itemID)) SetText(detail, cap, L"T1 chần: item quest-family");
-+        else SetText(detail, cap, L"T1 chẶn: shop context không hợp lệ");
++        if (!item.sellable) SetText(detail, cap, L"T1 blocked: IsItemSellable=false");
++        else if (direct_sell_logic::IsQuestFamily(item.itemID)) SetText(detail, cap, L"T1 blocked: quest-family item");
++        else SetText(detail, cap, L"T1 blocked: invalid shop context");
 +        return false;
 +    }
 +    const std::string payload = direct_sell_logic::BuildPayload(item.instanceID, npcShopID, shopID);
@@ -175,25 +108,210 @@ index 045fef1..8a1b34b 100644
 +    response.value64_0 = item.instanceID;
 +    response.value0 = static_cast<std::int32_t>(npcShopID);
 +    response.value1 = static_cast<std::int32_t>(shopID);
-+    SetText(detail, cap, L"T1 SEND 200036 OK • instance="); AppendInt64(detail, cap, item.instanceID);
-+    Append(detail, cap, L" • NpcShopID="); AppendInt64(detail, cap, npcShopID);
-+    Append(detail, cap, L" • ShopID="); AppendInt64(detail, cap, shopID);
++    SetText(detail, cap, L"T1 SEND 200036 OK; instance="); AppendInt64(detail, cap, item.instanceID);
++    Append(detail, cap, L"; NpcShopID="); AppendInt64(detail, cap, npcShopID);
++    Append(detail, cap, L"; ShopID="); AppendInt64(detail, cap, shopID);
 +    return true;
 +}
 +
- bool SellBagItem(std::int64_t instanceID, std::int32_t expectedItemID, Response& response,
-                  wchar_t* detail, std::size_t cap) {
-     Classes c{};
-@@ -2152,6 +2224,9 @@ void ProcessRequest() {
-            case Command::SellBagItem:
-                ok = SellBagItem(RequestInstanceID(g_shared->request.arg0, g_shared->request.arg1),
-                                 g_shared->request.arg2, r, detail, _countof(detail)); break;
+@@ -2154,0 +2227,3 @@ void ProcessRequest() {
 +            case Command::DirectSellTest:
 +                ok = DirectSellTest(RequestInstanceID(g_shared->request.arg0, g_shared->request.arg1),
 +                                    g_shared->request.arg2, r, detail, _countof(detail)); break;
-             case Command::ToggleRide:
-                ok = ToggleRide(g_shared->request.arg0 != 0, detail, _countof(detail)); break;
-             case Command::StartPath:
 diff --git a/src/controller.cpp b/src/controller.cpp
-index 6f815d0..2c97e92 100644
---- a/
+index a04d248..c628b20 100644
+--- a/src/controller.cpp
++++ b/src/controller.cpp
+@@ -31,0 +32 @@
++#include "direct_sell_logic.h"
+@@ -189,0 +191 @@ constexpr int IDC_IF_STATUS = 620;
++constexpr int IDC_IF_DIRECT_SELL_TEST = 621;
+@@ -5051,0 +5054,57 @@ private:
++    void RunInventoryDirectSellTest() {
++        if (!inventoryFilterBagList_) return;
++        Account* a = AccountByPid(inventoryFilterPid_);
++        if (!a) { SetInventoryFilterStatus(L"T1 FAIL: account unavailable"); return; }
++        const int selected = ListView_GetNextItem(inventoryFilterBagList_, -1, LVNI_SELECTED);
++        if (selected < 0 || selected >= static_cast<int>(inventoryFilterBagRows_.size())) {
++            SetInventoryFilterStatus(L"T1: select exactly one test item first"); return;
++        }
++        const InventoryBagRow selectedRow = inventoryFilterBagRows_[static_cast<std::size_t>(selected)];
++        if (!selectedRow.item.sellable) { SetInventoryFilterStatus(L"T1 BLOCKED: IsItemSellable=false"); return; }
++        if (direct_sell_logic::IsQuestFamily(selectedRow.item.itemID)) { SetInventoryFilterStatus(L"T1 BLOCKED: quest-family item"); return; }
++
++        const std::wstring warning = L"DIRECT SELL T1 will try to sell exactly ONE selected item.\n\n" +
++            selectedRow.name + L"\nItemID=" + std::to_wstring(selectedRow.item.itemID) +
++            L"\nInstanceID=" + std::to_wstring(selectedRow.item.instanceID) +
++            L"\n\nOpen the NPC shop normally before this test. Legacy AUTO SELL is not changed.\n\nContinue?";
++        if (MessageBoxW(inventoryFilterWindow_, warning.c_str(), L"DIRECT SELL T1",
++                        MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES) {
++            SetInventoryFilterStatus(L"T1 cancelled"); return;
++        }
++
++        std::int32_t low = 0, high = 0;
++        SplitInstanceID(selectedRow.item.instanceID, low, high);
++        Response response{}; std::wstring error;
++        SetInventoryFilterStatus(L"T1: reading shop context and sending CMD 200036...");
++        if (!a->bridge.Call(Command::DirectSellTest, low, high, selectedRow.item.itemID, response, error, 2800)) {
++            SetInventoryFilterStatus(L"T1 FAIL: " + error);
++            LogAccount(*a, L"DIRECT SELL T1 FAIL: " + selectedRow.name + L"; ItemID " +
++                           std::to_wstring(selectedRow.item.itemID) + L"; instance " +
++                           std::to_wstring(selectedRow.item.instanceID) + L"; " + error);
++            return;
++        }
++
++        bool removed = false; std::wstring verifyError; int freeAfter = -1;
++        for (int attempt = 0; attempt < 5 && !removed; ++attempt) {
++            Sleep(250);
++            std::vector<InventoryBagRow> fresh; int freeSpace = -1;
++            if (!ScanBagSemantic(*a, fresh, verifyError, &freeSpace)) continue;
++            freeAfter = freeSpace;
++            removed = std::none_of(fresh.begin(), fresh.end(), [&](const InventoryBagRow& row){
++                return row.item.instanceID == selectedRow.item.instanceID;
++            });
++        }
++        const std::wstring ids = L"NpcShopID=" + std::to_wstring(response.value0) + L"; ShopID=" + std::to_wstring(response.value1);
++        if (removed) {
++            SetInventoryFilterStatus(L"T1 PASS: selected instance disappeared; " + ids + L"; free=" + std::to_wstring(freeAfter));
++            LogAccount(*a, L"DIRECT SELL T1 PASS: CMD 200036; " + selectedRow.name + L"; ItemID " +
++                           std::to_wstring(selectedRow.item.itemID) + L"; instance " +
++                           std::to_wstring(selectedRow.item.instanceID) + L"; " + ids);
++            RefreshInventoryBagList();
++        } else {
++            std::wstring detail = response.detail; if (!verifyError.empty()) detail += L"; verify=" + verifyError;
++            SetInventoryFilterStatus(L"T1 VERIFY FAIL: packet dispatched but instance still exists; " + ids);
++            LogAccount(*a, L"DIRECT SELL T1 VERIFY FAIL: " + selectedRow.name + L"; instance still exists after 1.25s; " + ids + L"; " + detail);
++        }
++    }
++
+@@ -5072,0 +5132 @@ private:
++        MakeIn(parent, L"BUTTON", L"TEST DIRECT SELL T1 - 1 ITEM", BS_PUSHBUTTON, 14, 618, 500, 30, IDC_IF_DIRECT_SELL_TEST);
+@@ -5093,0 +5154 @@ private:
++        MakeIn(parent,L"STATIC",L"T1 only: open NPC shop, select one item, then test CMD 200036. AUTO SELL is unchanged.",SS_LEFT|SS_CENTERIMAGE|WS_BORDER,535,618,475,30,0);
+@@ -5106 +5167 @@ private:
+-            WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX, CW_USEDEFAULT,CW_USEDEFAULT,1045,665,hwnd_,nullptr,instance_,this);
++            WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX, CW_USEDEFAULT,CW_USEDEFAULT,1045,710,hwnd_,nullptr,instance_,this);
+@@ -5120,0 +5182 @@ private:
++                    case IDC_IF_DIRECT_SELL_TEST: RunInventoryDirectSellTest(); return 0;
+diff --git a/src/direct_sell_logic.h b/src/direct_sell_logic.h
+new file mode 100644
+index 0000000..d92662b
+--- /dev/null
++++ b/src/direct_sell_logic.h
+@@ -0,0 +1,21 @@
++#pragma once
++#include <cstdint>
++#include <string>
++
++namespace direct_sell_logic {
++
++inline bool IsQuestFamily(std::int32_t itemID) {
++    return itemID >= 40000000 && itemID < 50000000;
++}
++
++inline bool CanTestSell(bool sellable, std::int32_t itemID, std::int64_t npcShopID, std::int64_t shopID) {
++    return sellable && itemID > 0 && !IsQuestFamily(itemID) && npcShopID > 0 && shopID > 0;
++}
++
++inline std::string BuildPayload(std::int64_t instanceID, std::int64_t npcShopID, std::int64_t shopID) {
++    return std::to_string(static_cast<long long>(instanceID)) + ":" +
++           std::to_string(static_cast<long long>(npcShopID)) + ":" +
++           std::to_string(static_cast<long long>(shopID));
++}
++
++} // namespace direct_sell_logic
+diff --git a/src/direct_sell_logic_test.cpp b/src/direct_sell_logic_test.cpp
+new file mode 100644
+index 0000000..276cc15
+--- /dev/null
++++ b/src/direct_sell_logic_test.cpp
+@@ -0,0 +1,16 @@
++#include "direct_sell_logic.h"
++#include <cassert>
++#include <cstdint>
++#include <iostream>
++
++int main() {
++    using namespace direct_sell_logic;
++    assert(BuildPayload(123456789LL, 321, 7) == "123456789:321:7");
++    assert(CanTestSell(true, 12345, 321, 7));
++    assert(!CanTestSell(false, 12345, 321, 7));
++    assert(!CanTestSell(true, 40000001, 321, 7));
++    assert(!CanTestSell(true, 12345, 0, 7));
++    assert(!CanTestSell(true, 12345, 321, 0));
++    std::cout << "direct_sell_logic PASS\n";
++    return 0;
++}
+diff --git a/src/protocol.h b/src/protocol.h
+index 67b771c..a5cdbb9 100644
+--- a/src/protocol.h
++++ b/src/protocol.h
+@@ -12 +12 @@ constexpr std::uint32_t kMagic = 0x4352544Cu; // CRTL
+-constexpr std::uint32_t kProtocolVersion = 0x00010622u;
++constexpr std::uint32_t kProtocolVersion = 0x00010623u;
+@@ -38,0 +39 @@ enum class Command : std::uint32_t {
++    DirectSellTest = 22,
+diff --git a/tools/verify_v15_direct_sell.py b/tools/verify_v15_direct_sell.py
+new file mode 100644
+index 0000000..400617b
+--- /dev/null
++++ b/tools/verify_v15_direct_sell.py
+@@ -0,0 +1,58 @@
++from pathlib import Path
++import hashlib,re,sys
++ROOT=Path(__file__).resolve().parents[1]
++
++def txt(rel): return (ROOT/rel).read_bytes().decode('utf-8')
++def fail(msg): print('FAIL:',msg); sys.exit(1)
++def need(ok,msg):
++    if not ok: fail(msg)
++def func(text,name):
++    m=re.search(r'\b'+re.escape(name)+r'\s*\(',text)
++    need(m is not None,'missing '+name)
++    b=text.find('{',m.end()); need(b>=0,'no body '+name)
++    depth=0; ins=None; esc=False
++    for i in range(b,len(text)):
++        c=text[i]
++        if ins:
++            if esc: esc=False
++            elif c=='\\': esc=True
++            elif c==ins: ins=None
++        else:
++            if c in "\"'": ins=c
++            elif c=='{': depth+=1
++            elif c=='}':
++                depth-=1
++                if depth==0: return text[m.start():i+1]
++    fail('unbalanced '+name)
++def sha(text,name): return hashlib.sha256(func(text,name).encode()).hexdigest()
++C=txt('src/controller.cpp'); B=txt('src/bridge.cpp'); P=txt('src/protocol.h'); CM=txt('CMakeLists.txt'); R=txt('resources/app.rc'); V=txt('VERSION.txt').strip()
++need(V=='1.5','VERSION must be 1.5')
++need('VERSION 1.5.0' in CM,'CMake version missing')
++need('FILEVERSION 1,5,0,0' in R and 'ThanLongItemConsolidator_v1.5.exe' in R,'resource version missing')
++need('kProtocolVersion = 0x00010623u' in P and 'DirectSellTest = 22' in P,'protocol/command missing')
++for m in ['TEST DIRECT SELL T1 - 1 ITEM','Command::DirectSellTest','T1 VERIFY FAIL','T1 PASS: selected instance disappeared','Legacy AUTO SELL is not changed']:
++    need(m in C,'controller T1 marker missing: '+m)
++for m in ['bool DirectSellTest(','FindCurrentShopContext','SendNetworkPacket(c, 200036, payload','BuildPayload(item.instanceID, npcShopID, shopID)','packet not sent']:
++    need(m in B,'bridge T1 marker missing: '+m)
++need('direct_sell_logic_tests' in CM,'direct sell test target missing')
++protectedC={
++'RunSellMacroClick':'b0d49f5312ad377a9d3ff6c8ddd714b20e1d85ad25d0090deb58f8b99bd0ef4b',
++'TickAccount':'60ea192008f0b3f5d72082c1294ce7506b4acbde93fdea840f2b420b4705e3a5',
++'TickAutoPk':'273b857f99c16578be9ba89dabe4339c58b48eab426197a429b648bfea1f2dc7',
++'EnsureAutoFightOffForTravel':'d45511f0ac256e954f113429bae509ff629c3eef8b20210acfb5ac3472503e38',
++'HandleRobustTravel':'bb52cb528cf33f3ee8ed5febdb937a46de026c20d9d4ac939f7315c1f7053b61',
++'PriorityReviveClick':'7540ddcb94053c40f1005d9bed8b47c069d620e14e2461bc8643d9815fd3eb09',
++'PriorityAutoClick':'11d38a96dca96deef648b49986b00878cdd181a03f0878e98ebac5d883891c42',
++'ResetRuntimeForLifeBoundary':'a67af2fd13a5ccca237b56d2f1146a6f1fe02ce4820c495d7ff33aabbb3f1345',
++'BeginTrainRecovery':'ca91987e7f38d377c17d977fdacf91fddfc28aea55afaf25df8128c5df27adb3',
++'HandleDeath':'5876babf991e5466679267e5f804ec1c54126a9932a789cc3c411acd6d5a0460',
++'AbortTrade':'541fc139acebb036d35de37d5d4a3fef9d38cd386f4c59ba72a5889e17150dac'}
++protectedB={
++'SellBagItem':'b2219eabe0b94917da72a9ba99eb1c24625fb766fff92bbf8b979b1ec28b21d8',
++'DropBagItem':'2839cbcb76e06279212897cc22b0c353c871e8591f94c03c0773d3147deb32ad',
++'ReadBagPage':'98a5686772c86a9fad98b3e2a5786c74ee9d60b108be7c533d438acceb2a22f6',
++'ReadBagObjects':'4d93a7ebbe03497219505603e9e42b7615c4aaee7bd2255464e3960b1b02bbfe',
++'SendNetworkPacket':'b72edb2b32973955dd3645a6e9af5da76df0ff3412514c6ac25950f55067838f'}
++for n,h in protectedC.items(): need(sha(C,n)==h,'protected controller changed: '+n)
++for n,h in protectedB.items(): need(sha(B,n)==h,'protected bridge changed: '+n)
++print('verify_v15_direct_sell PASS')
