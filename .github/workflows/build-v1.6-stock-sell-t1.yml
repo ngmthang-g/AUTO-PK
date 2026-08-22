@@ -57,6 +57,7 @@ jobs:
           git apply --ignore-space-change --directory=work 'v1.6-stock-sell.normalized.patch'
           if ($LASTEXITCODE -ne 0) { throw 'Failed to apply v1.6 patch' }
           $env:PYTHONUTF8 = '1'
+          $env:PYTHONDONTWRITEBYTECODE = '1'
           python 'work\tools\verify_v16_stock_sell.py'
           if ($LASTEXITCODE -ne 0) { throw 'v1.6 verifier failed' }
           python 'work\tools\verify_v16_stock_sell_test.py'
