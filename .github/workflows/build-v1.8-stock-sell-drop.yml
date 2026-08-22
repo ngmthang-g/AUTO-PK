@@ -1,0 +1,124 @@
+name: build-v1.8-stock-sell-drop
+
+on:
+  push:
+    branches:
+      - release/v1.8-stock-sell-drop
+    paths-ignore:
+      - 'dist/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows-x64:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify v1.7 source base
+        shell: pwsh
+        run: |
+          $base = 'dist\ThanLongItemConsolidator-v1.7-source.zip'
+          if (!(Test-Path $base)) { throw 'Missing v1.7 source ZIP' }
+          $hash = (Get-FileHash $base -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne '6f73fbd081f8cddf833cde0900e5e5a55f7f7b96e70fe1c6b231e634c42d49be') {
+            throw "v1.7 source SHA256 mismatch: $hash"
+          }
+
+      - name: Normalize and verify v1.8 patch
+        shell: pwsh
+        run: |
+          $raw = Get-Content 'payload-v18\v1.8-stock-sell-drop.patch' -Raw
+          $normalized = $raw.Replace("`r`n", "`n")
+          [IO.File]::WriteAllText('v1.8-stock-sell-drop.normalized.patch', $normalized, [Text.UTF8Encoding]::new($false))
+          $hash = (Get-FileHash 'v1.8-stock-sell-drop.normalized.patch' -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne '09811d08687c1f112182f6a5478e3044185c7c7d7760eb35f8e85d4979111b76') {
+            throw "v1.8 patch SHA256 mismatch: $hash"
+          }
+
+      - name: Reconstruct v1.8 source surgically
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force base-unpack, work | Out-Null
+          Expand-Archive 'dist\ThanLongItemConsolidator-v1.7-source.zip' base-unpack -Force
+          if (Test-Path 'base-unpack\CMakeLists.txt') {
+            $src = (Resolve-Path 'base-unpack').Path
+          } else {
+            $candidates = @(Get-ChildItem 'base-unpack' -Directory | Where-Object { Test-Path (Join-Path $_.FullName 'CMakeLists.txt') })
+            if ($candidates.Count -ne 1) { throw "Cannot identify v1.7 source root; candidates=$($candidates.Count)" }
+            $src = $candidates[0].FullName
+          }
+          Get-ChildItem $src -Force | Copy-Item -Destination work -Recurse -Force
+          git apply --check --ignore-space-change --directory=work 'v1.8-stock-sell-drop.normalized.patch'
+          if ($LASTEXITCODE -ne 0) { throw 'v1.8 patch does not apply cleanly to v1.7 source' }
+          git apply --ignore-space-change --directory=work 'v1.8-stock-sell-drop.normalized.patch'
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to apply v1.8 patch' }
+          $env:PYTHONUTF8 = '1'
+          $env:PYTHONDONTWRITEBYTECODE = '1'
+          python 'work\tools\verify_v18_stock_sell_drop.py'
+          if ($LASTEXITCODE -ne 0) { throw 'v1.8 verifier failed' }
+          python 'work\tools\verify_v18_stock_sell_drop_test.py'
+          if ($LASTEXITCODE -ne 0) { throw 'v1.8 verifier self-test failed' }
+          $pycache = @(Get-ChildItem work -Recurse -Force -Directory -Filter '__pycache__')
+          if ($pycache.Count -ne 0) { throw 'Python cache leaked into reconstructed source' }
+          New-Item -ItemType Directory -Force source-stage | Out-Null
+          Get-ChildItem work -Force | Copy-Item -Destination source-stage -Recurse -Force
+
+      - name: Configure x64
+        shell: pwsh
+        run: cmake -S work -B work\build -A x64
+
+      - name: Build Release
+        shell: pwsh
+        run: cmake --build work\build --config Release --parallel
+
+      - name: Run 13 logic tests and 2 verifier tests
+        shell: pwsh
+        run: ctest --test-dir work\build -C Release --output-on-failure
+
+      - name: Package tested v1.8 EXE DLL and source
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force stage, dist | Out-Null
+          Copy-Item 'work\build\Release\ThanLongItemConsolidator.exe' 'stage\ThanLongItemConsolidator_v1.8.exe'
+          Copy-Item 'work\build\Release\ThanLongCleanRouteBridge.dll' 'stage\ThanLongCleanRouteBridge.dll'
+          Copy-Item 'work\README.md' 'stage\README.md'
+          Copy-Item 'work\CHANGELOG.md' 'stage\CHANGELOG.md'
+          Copy-Item 'work\VERSION.txt' 'stage\VERSION.txt'
+
+          Copy-Item 'stage\ThanLongItemConsolidator_v1.8.exe' 'dist\ThanLongItemConsolidator_v1.8.exe' -Force
+          Copy-Item 'stage\ThanLongCleanRouteBridge.dll' 'dist\ThanLongCleanRouteBridge_v1.8.dll' -Force
+          Compress-Archive -Path 'stage\*' -DestinationPath 'dist\ThanLongItemConsolidator-v1.8-win-x64.zip' -Force
+          Compress-Archive -Path 'source-stage\*' -DestinationPath 'dist\ThanLongItemConsolidator-v1.8-source.zip' -Force
+
+          $runtime = (Get-FileHash 'dist\ThanLongItemConsolidator-v1.8-win-x64.zip' -Algorithm SHA256).Hash.ToLower()
+          $source = (Get-FileHash 'dist\ThanLongItemConsolidator-v1.8-source.zip' -Algorithm SHA256).Hash.ToLower()
+          $exe = (Get-FileHash 'dist\ThanLongItemConsolidator_v1.8.exe' -Algorithm SHA256).Hash.ToLower()
+          $dll = (Get-FileHash 'dist\ThanLongCleanRouteBridge_v1.8.dll' -Algorithm SHA256).Hash.ToLower()
+          @(
+            "$runtime  ThanLongItemConsolidator-v1.8-win-x64.zip",
+            "$source  ThanLongItemConsolidator-v1.8-source.zip",
+            "$exe  ThanLongItemConsolidator_v1.8.exe",
+            "$dll  ThanLongCleanRouteBridge_v1.8.dll"
+          ) | Set-Content 'dist\SHA256_v1.8.txt'
+
+      - name: Upload v1.8 runtime artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ThanLongItemConsolidator-v1.8-win-x64
+          path: stage
+          if-no-files-found: error
+
+      - name: Publish tested v1.8 files to release branch
+        if: github.event_name == 'push'
+        shell: pwsh
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- 'dist/ThanLongItemConsolidator-v1.8-win-x64.zip' 'dist/ThanLongItemConsolidator-v1.8-source.zip' 'dist/ThanLongItemConsolidator_v1.8.exe' 'dist/ThanLongCleanRouteBridge_v1.8.dll' 'dist/SHA256_v1.8.txt'
+          if (git diff --cached --quiet) { exit 0 }
+          git commit -m 'Publish v1.8 stock sell fix and Drop T1 Windows x64 [skip ci]'
+          git push origin "HEAD:$env:GITHUB_REF_NAME"
