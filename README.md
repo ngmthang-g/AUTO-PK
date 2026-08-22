@@ -1,17 +1,14 @@
-# AUTO PK v0.6.2.0
+# AUTO PK — ThanLongItemConsolidator v1.6
 
-Windows x64 build of ThanLongItemConsolidator with the new Auto PK tab.
+Windows x64 build sửa riêng phép thử bán một vật phẩm trong cửa sổ **LỌC ĐỒ**.
 
-## Build integrity
+## v1.6 stock RequestSellItem
 
-The repository stores the buildable source archive as ordered Base64 chunks under `payload/`. GitHub Actions reconstructs the archive and requires this exact SHA-256 before compiling:
+- Re-scan đúng live `InstanceID` và giữ guard bán/quest-family.
+- Gọi trực tiếp semantic nội bộ `NPCShop_SellItemTab.RequestSellItem(item)` qua bridge.
+- Không dùng click tọa độ màn hình và không chiếm chuột người dùng.
+- Chỉ báo PASS khi đúng instance đã chọn biến mất khỏi fresh bag scan.
+- Verifier cấm đường mouse/direct packet, khóa đúng một stock dispatch và tự thử đột biến từng protected function definition.
+- AUTO SELL, lọc đồ production, Auto PK, trade, route, Telegram và các primitive khác không đổi.
 
-`010794ffb509b50453878b13de3412376f305bfcfcf8a3414d1c1ea9f8edef18`
-
-The Windows workflow then builds the EXE + bridge DLL, runs all logic tests including `auto_pk_logic_tests.exe`, and only after success publishes:
-
-- `dist/ThanLongItemConsolidator-v0.6.2.0-win-x64.zip`
-- `dist/ThanLongItemConsolidator-AutoPK-v0.6.2.0-source.zip`
-- `dist/SHA256_v0.6.2.0.txt`
-
-The runtime ZIP contains `ThanLongItemConsolidator_v0.6.2.0.exe` and `ThanLongCleanRouteBridge.dll`.
+Windows CI dựng từ source v1.5 đúng SHA-256, áp patch v1.6 đúng SHA-256, chạy 13 logic tests + verifier + verifier self-test qua CTest trước khi publish EXE/DLL/source ZIP vào `dist/`.
