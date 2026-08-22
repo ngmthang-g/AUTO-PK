@@ -1,0 +1,124 @@
+name: build-v1.7-stock-sell-nested-root
+
+on:
+  push:
+    branches:
+      - release/v1.7-stock-sell-nested-root
+    paths-ignore:
+      - 'dist/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows-x64:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify v1.6 source base
+        shell: pwsh
+        run: |
+          $base = 'dist\ThanLongItemConsolidator-v1.6-source.zip'
+          if (!(Test-Path $base)) { throw 'Missing v1.6 source ZIP' }
+          $hash = (Get-FileHash $base -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne '6ea58a25f278fc772a7f881d59fe59821249ad89e3c341472030992d56fa1707') {
+            throw "v1.6 source SHA256 mismatch: $hash"
+          }
+
+      - name: Normalize and verify v1.7 patch
+        shell: pwsh
+        run: |
+          $raw = Get-Content 'payload-v17\v1.7-stock-sell-nested-root.patch' -Raw
+          $normalized = $raw.Replace("`r`n", "`n")
+          [IO.File]::WriteAllText('v1.7-stock-sell-nested-root.normalized.patch', $normalized, [Text.UTF8Encoding]::new($false))
+          $hash = (Get-FileHash 'v1.7-stock-sell-nested-root.normalized.patch' -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne '51c39ce7b27b10a75b6aa367d07e36e732fc0008aae4e2735952f97735607ee3') {
+            throw "v1.7 patch SHA256 mismatch: $hash"
+          }
+
+      - name: Reconstruct v1.7 source surgically
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force base-unpack, work | Out-Null
+          Expand-Archive 'dist\ThanLongItemConsolidator-v1.6-source.zip' base-unpack -Force
+          if (Test-Path 'base-unpack\CMakeLists.txt') {
+            $src = (Resolve-Path 'base-unpack').Path
+          } else {
+            $candidates = @(Get-ChildItem 'base-unpack' -Directory | Where-Object { Test-Path (Join-Path $_.FullName 'CMakeLists.txt') })
+            if ($candidates.Count -ne 1) { throw "Cannot identify v1.6 source root; candidates=$($candidates.Count)" }
+            $src = $candidates[0].FullName
+          }
+          Get-ChildItem $src -Force | Copy-Item -Destination work -Recurse -Force
+          git apply --check --ignore-space-change --directory=work 'v1.7-stock-sell-nested-root.normalized.patch'
+          if ($LASTEXITCODE -ne 0) { throw 'v1.7 patch does not apply cleanly to v1.6 source' }
+          git apply --ignore-space-change --directory=work 'v1.7-stock-sell-nested-root.normalized.patch'
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to apply v1.7 patch' }
+          $env:PYTHONUTF8 = '1'
+          $env:PYTHONDONTWRITEBYTECODE = '1'
+          python 'work\tools\verify_v17_stock_sell.py'
+          if ($LASTEXITCODE -ne 0) { throw 'v1.7 verifier failed' }
+          python 'work\tools\verify_v17_stock_sell_test.py'
+          if ($LASTEXITCODE -ne 0) { throw 'v1.7 verifier self-test failed' }
+          $pycache = @(Get-ChildItem work -Recurse -Force -Directory -Filter '__pycache__')
+          if ($pycache.Count -ne 0) { throw 'Python cache leaked into reconstructed source' }
+          New-Item -ItemType Directory -Force source-stage | Out-Null
+          Get-ChildItem work -Force | Copy-Item -Destination source-stage -Recurse -Force
+
+      - name: Configure x64
+        shell: pwsh
+        run: cmake -S work -B work\build -A x64
+
+      - name: Build Release
+        shell: pwsh
+        run: cmake --build work\build --config Release --parallel
+
+      - name: Run 13 logic tests and 2 verifier tests
+        shell: pwsh
+        run: ctest --test-dir work\build -C Release --output-on-failure
+
+      - name: Package tested v1.7 EXE DLL and source
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force stage, dist | Out-Null
+          Copy-Item 'work\build\Release\ThanLongItemConsolidator.exe' 'stage\ThanLongItemConsolidator_v1.7.exe'
+          Copy-Item 'work\build\Release\ThanLongCleanRouteBridge.dll' 'stage\ThanLongCleanRouteBridge.dll'
+          Copy-Item 'work\README.md' 'stage\README.md'
+          Copy-Item 'work\CHANGELOG.md' 'stage\CHANGELOG.md'
+          Copy-Item 'work\VERSION.txt' 'stage\VERSION.txt'
+
+          Copy-Item 'stage\ThanLongItemConsolidator_v1.7.exe' 'dist\ThanLongItemConsolidator_v1.7.exe' -Force
+          Copy-Item 'stage\ThanLongCleanRouteBridge.dll' 'dist\ThanLongCleanRouteBridge.dll' -Force
+          Compress-Archive -Path 'stage\*' -DestinationPath 'dist\ThanLongItemConsolidator-v1.7-win-x64.zip' -Force
+          Compress-Archive -Path 'source-stage\*' -DestinationPath 'dist\ThanLongItemConsolidator-v1.7-source.zip' -Force
+
+          $runtime = (Get-FileHash 'dist\ThanLongItemConsolidator-v1.7-win-x64.zip' -Algorithm SHA256).Hash.ToLower()
+          $source = (Get-FileHash 'dist\ThanLongItemConsolidator-v1.7-source.zip' -Algorithm SHA256).Hash.ToLower()
+          $exe = (Get-FileHash 'dist\ThanLongItemConsolidator_v1.7.exe' -Algorithm SHA256).Hash.ToLower()
+          $dll = (Get-FileHash 'dist\ThanLongCleanRouteBridge.dll' -Algorithm SHA256).Hash.ToLower()
+          @(
+            "$runtime  ThanLongItemConsolidator-v1.7-win-x64.zip",
+            "$source  ThanLongItemConsolidator-v1.7-source.zip",
+            "$exe  ThanLongItemConsolidator_v1.7.exe",
+            "$dll  ThanLongCleanRouteBridge.dll"
+          ) | Set-Content 'dist\SHA256_v1.7.txt'
+
+      - name: Upload v1.7 runtime artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ThanLongItemConsolidator-v1.7-win-x64
+          path: stage
+          if-no-files-found: error
+
+      - name: Publish tested v1.7 files to release branch
+        if: github.event_name == 'push'
+        shell: pwsh
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- 'dist/ThanLongItemConsolidator-v1.7-win-x64.zip' 'dist/ThanLongItemConsolidator-v1.7-source.zip' 'dist/ThanLongItemConsolidator_v1.7.exe' 'dist/ThanLongCleanRouteBridge.dll' 'dist/SHA256_v1.7.txt'
+          if (git diff --cached --quiet) { exit 0 }
+          git commit -m 'Publish v1.7 nested stock RequestSellItem Windows x64 [skip ci]'
+          git push origin "HEAD:$env:GITHUB_REF_NAME"
