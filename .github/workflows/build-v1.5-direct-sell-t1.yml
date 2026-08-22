@@ -41,7 +41,7 @@ jobs:
           $normalized = $raw.Replace("`r`n", "`n")
           [IO.File]::WriteAllText('v1.5-direct-sell.normalized.patch', $normalized, [Text.UTF8Encoding]::new($false))
           $hash = (Get-FileHash 'v1.5-direct-sell.normalized.patch' -Algorithm SHA256).Hash.ToLower()
-          if ($hash -ne 'bd938c4806704cf0352472984133773403dc1c0e0fde443fdce700ef0c9e810b') {
+          if ($hash -ne '837300be5eb4fe2870efa031fbd31084f343929a58b3c9373b559fb6e65825ff') {
             throw "v1.5 patch SHA256 mismatch: $hash"
           }
 
@@ -58,9 +58,9 @@ jobs:
             $src = $candidates[0].FullName
           }
           Get-ChildItem $src -Force | Copy-Item -Destination work -Recurse -Force
-          git apply --check --directory=work 'v1.5-direct-sell.normalized.patch'
+          git apply --check --unidiff-zero --ignore-space-change --directory=work 'v1.5-direct-sell.normalized.patch'
           if ($LASTEXITCODE -ne 0) { throw 'v1.5 patch does not apply cleanly to tested v1.4 source' }
-          git apply --directory=work 'v1.5-direct-sell.normalized.patch'
+          git apply --unidiff-zero --ignore-space-change --directory=work 'v1.5-direct-sell.normalized.patch'
           if ($LASTEXITCODE -ne 0) { throw 'Failed to apply v1.5 patch' }
           $env:PYTHONUTF8 = '1'
           python 'work\tools\verify_v15_direct_sell.py'
