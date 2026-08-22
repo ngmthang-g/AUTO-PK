@@ -6,6 +6,12 @@ on:
       - release/v1.5-direct-sell-t1
     paths-ignore:
       - 'dist/**'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'payload-v15/**'
+      - '.github/workflows/build-v1.5-direct-sell-t1.yml'
   workflow_dispatch:
 
 permissions:
@@ -53,7 +59,7 @@ jobs:
           }
           Get-ChildItem $src -Force | Copy-Item -Destination work -Recurse -Force
           git apply --check --directory=work 'v1.5-direct-sell.normalized.patch'
-          if ($LASTEXITCODE -ne 0) { throw 'v1.5 patch does not apply cleanle to tested v1.4 source' }
+          if ($LASTEXITCODE -ne 0) { throw 'v1.5 patch does not apply cleanly to tested v1.4 source' }
           git apply --directory=work 'v1.5-direct-sell.normalized.patch'
           if ($LASTEXITCODE -ne 0) { throw 'Failed to apply v1.5 patch' }
           $env:PYTHONUTF8 = '1'
