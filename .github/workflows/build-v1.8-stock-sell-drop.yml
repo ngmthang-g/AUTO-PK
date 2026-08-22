@@ -35,7 +35,7 @@ jobs:
           $normalized = $raw.Replace("`r`n", "`n")
           [IO.File]::WriteAllText('v1.8-stock-sell-drop.normalized.patch', $normalized, [Text.UTF8Encoding]::new($false))
           $hash = (Get-FileHash 'v1.8-stock-sell-drop.normalized.patch' -Algorithm SHA256).Hash.ToLower()
-          if ($hash -ne '09811d08687c1f112182f6a5478e3044185c7c7d7760eb35f8e85d4979111b76') {
+          if ($hash -ne '3cbe076618f90198e1300521aaa1e546c9e0bcd7f774ae7c58e66eb3124f209f') {
             throw "v1.8 patch SHA256 mismatch: $hash"
           }
 
